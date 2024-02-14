@@ -10,6 +10,7 @@ import java.util.Set;
 
 @Repository
 public interface PageRepository extends JpaRepository<Page, Integer> {
-    Page findByPath(String path);
+    List<Page> findByPath(String path);
+    List<Page> findBySite_id(int site_id);
 
 }

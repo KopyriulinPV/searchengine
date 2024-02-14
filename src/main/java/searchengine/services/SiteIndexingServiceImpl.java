@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.model.Site;
 import searchengine.model.Status;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
@@ -24,15 +26,21 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
     private PageRepository pageRepository;
     @Autowired
     private SiteRepository siteRepository;
+    @Autowired
+    private LemmaRepository lemmaRepository;
+    @Autowired
+    private IndexRepository indexRepository;
 
-    public void siteIndexing(SiteRepository siteRepository, PageRepository pageRepository, Site site) throws IOException, InterruptedException {
+    public void siteIndexing(SiteRepository siteRepository, PageRepository pageRepository,
+                             Site site, LemmaRepository lemmaRepository, IndexRepository indexRepository)
+            throws IOException, InterruptedException {
 
         site.setStatus(Status.INDEXING);
         site.setStatus_time(LocalDateTime.now());
         siteRepository.saveAndFlush(site);
 
         TravelingTheWeb action = new TravelingTheWeb(site, pageRepository,
-                siteRepository, site.getUrl());
+                siteRepository, site.getUrl(), lemmaRepository, indexRepository);
         ForkJoinPool pool = new ForkJoinPool(4);
         String listPath = pool.invoke(action);
 
@@ -43,11 +51,7 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
             site.setLast_error(listPath);
             site.setStatus(Status.FAILED);
         }
+
         siteRepository.saveAndFlush(site);
     }
-
-
-
-
-
 }

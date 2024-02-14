@@ -1,13 +1,9 @@
 indexing-settings:
   sites:
-    - url: https://ipfran.ru/
-      name: ipfran
-    - url: https://www.svetlovka.ru/
-      name: svetlovka
-
-
-
-
+    - url: https://dimonvideo.ru/
+      name: dimonvideo
+    - url: https://et-cetera.ru/mobile/
+      name: et-cetera.ru
 
 
 server:
