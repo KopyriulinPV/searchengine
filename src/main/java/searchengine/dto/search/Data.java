@@ -1,6 +1,5 @@
 package searchengine.dto.search;
 
-import searchengine.model.Site;
 @lombok.Data
 public class Data {
     String site;

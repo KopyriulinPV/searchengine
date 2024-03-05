@@ -1,15 +1,11 @@
 package searchengine.services;
 import lombok.Data;
-import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
-import searchengine.model.Index;
-import searchengine.model.Lemma;
-import searchengine.model.Page;
-import searchengine.model.Site;
+import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
@@ -24,10 +20,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import searchengine.repositories.SiteRepository;
 
-@Service
+
 @Data
+@Service
 public class TravelingTheWeb extends RecursiveTask<String> {
-    private List<String> linksFromTags = new ArrayList<>();
     private Site site;
     private PageRepository pageRepository;
     private SiteRepository siteRepository;
@@ -35,76 +31,76 @@ public class TravelingTheWeb extends RecursiveTask<String> {
     private IndexRepository indexRepository;
     private String url;
     public static boolean indexingStop;
+    private LemmaFinder lemmaFinder;
+
     public TravelingTheWeb(Site site, PageRepository pageRepository,
-                           SiteRepository siteRepository, String Url,
-                           LemmaRepository lemmaRepository, IndexRepository indexRepository) {
+                           SiteRepository siteRepository, String url,
+                           LemmaRepository lemmaRepository, IndexRepository indexRepository, LemmaFinder lemmaFinder) {
         this.site = site;
         this.pageRepository = pageRepository;
         this.siteRepository = siteRepository;
-        this.url = Url;
+        this.url = url;
         this.lemmaRepository = lemmaRepository;
         this.indexRepository = indexRepository;
+        this.lemmaFinder = lemmaFinder;
     }
     public TravelingTheWeb() {
     }
     String regex = "http[s]?://[^#, \\s]*\\.?[a-z]*\\.ru[^#,\\s]*";
-    public int i = 0;
+
     @Override
     protected String compute() {
         try {
 
-            Document document = Jsoup.connect(url).get();
-            Thread.sleep(500);
-            Elements elements = document.select("body").select("a");
-            elements.forEach(element -> {
-                linksFromTags.add(element.absUrl("href"));
-            });
-
-            for (int j = 0; j < linksFromTags.size(); j++) {
-
-                if (linksFromTags.get(j).matches(regex)) {
-                    URL pathUrl = new URL(linksFromTags.get(j));
+             for (String tag : formationListUrl(url)) {
+                if (tag.matches(regex)) {
+                    URL pathUrl = new URL(tag);
                     URL pathUrl2 = new URL(url);
-
                     Pattern pattern = Pattern.compile(pathUrl2.getHost());
-                    Matcher matcher = pattern.matcher(linksFromTags.get(j));
-
-                    if (indexingStop == true) {
-                        return "Индексация остановлена пользователем";
-                    }
-
+                    Matcher matcher = pattern.matcher(tag);
                     List<Page> pagesList = pageRepository.findByPath(pathUrl.getPath());
                     if ((pagesList.size() == 0) && matcher.find()) {
-                        indexingSitePage(linksFromTags.get(j), pathUrl);
+                        String indexingStop = indexingSitePage(tag, pathUrl);
+                        if (indexingStop.matches("Индексация остановлена пользователем")) {
+                            return "Индексация остановлена пользователем";
+                        }
                     }
                     List<Page> pagesList1 = pageRepository.findByPath(pathUrl.getPath());
                     List<Page> pagesList2 = pageRepository.findByPath(pathUrl.getPath());
-
                     for (Page newPage : pagesList1) {
-                        if (newPage.getSite().getUrl().contains(pathUrl.getHost())) {
+                        if (newPage.getSite().getUrl().contains(pathUrl2.getHost())) {
                             pagesList2.add(newPage);
                         }
                     }
                     if (pagesList2.size() == 0 && matcher.find()) {
-                        indexingSitePage(linksFromTags.get(j), pathUrl);
+                        String indexingStop = indexingSitePage(tag, pathUrl);
+                        if (indexingStop.matches("Индексация остановлена пользователем")) {
+                            return "Индексация остановлена пользователем";
+                        }
                     }
-                 }
+                    if (indexingStop == true) {
+                        return "Индексация остановлена пользователем";
+                    }
+                }
             }
-
-
         } catch (Exception ex) {
             ex.printStackTrace();
             String error = ex.toString();
-            return error;
+            site.setLast_error(error);
+            site.setStatus(Status.FAILED);
+            siteRepository.saveAndFlush(site);
         }
-
-        return null;
+        return "Индексация завершена";
     }
-
-    private void indexingSitePage(String nexUrl, URL pathUrl) throws IOException {
-
+    /**
+     * запись в БД проиндексированных сущностей Site и Page
+     */
+    private String indexingSitePage(String nexUrl, URL pathUrl) throws IOException, InterruptedException {
+        if (indexingStop == true) {
+            return "Индексация остановлена пользователем";
+        }
         TravelingTheWeb action = new TravelingTheWeb(site, pageRepository,
-                siteRepository, nexUrl, lemmaRepository, indexRepository);
+                siteRepository, nexUrl, lemmaRepository, indexRepository, lemmaFinder);
         action.fork();
         site.setStatus_time(LocalDateTime.now());
         siteRepository.saveAndFlush(site);
@@ -115,18 +111,26 @@ public class TravelingTheWeb extends RecursiveTask<String> {
         pageEntity.setCode(code.statusCode());
 
         Document document1 = Jsoup.connect(nexUrl).get();
+        Thread.sleep(1000);
 
         pageEntity.setContent(document1.getAllElements().toString());
 
         pageRepository.saveAndFlush(pageEntity);
-        indexingLemmaIndex(nexUrl, pageEntity);
-        System.out.println(Thread.currentThread().getName() +
-                "        " + pathUrl + "   " + pageEntity.getPath());
-        action.join();
-    }
+        String indexingStop = indexingLemmaIndex(nexUrl, pageEntity);
+        if (indexingStop.matches("Индексация остановлена пользователем")) {
+            return "Индексация остановлена пользователем";
+        }
 
-    private void indexingLemmaIndex(String nexUrl, Page pageEntity) throws IOException {
-        LemmaFinder lemmaFinder = new LemmaFinder(new RussianLuceneMorphology());
+        action.join();
+        return "";
+    }
+    /**
+     * запись в БД проиндексированных сущностей Lemma и Index
+     */
+    private String indexingLemmaIndex(String nexUrl, Page pageEntity) throws IOException {
+        if (indexingStop == true) {
+            return "Индексация остановлена пользователем";
+        }
         Document document2 = Jsoup.connect(nexUrl).get();
         Map<String, Integer> lemmaFinderMap = lemmaFinder.collectLemmas(document2.
                 getAllElements().toString());
@@ -138,9 +142,9 @@ public class TravelingTheWeb extends RecursiveTask<String> {
             lemma.setFrequency(1);
             List<Lemma> lemmaList = lemmaRepository.findAllContains(lemmaString, site.getId());
             List<Lemma> lemmaList1 = new ArrayList<>();
-            for (int q = 0; q < lemmaList.size(); q++) {
-                if (lemmaList.get(q).getLemma().equals(lemmaString)) {
-                    lemmaList1.add(lemmaList.get(q));
+            for (Lemma lemma1 : lemmaList) {
+                if (lemma1.getLemma().equals(lemmaString)) {
+                    lemmaList1.add(lemma1);
                 }
             }
             if (lemmaList.size() == 0) {
@@ -151,15 +155,14 @@ public class TravelingTheWeb extends RecursiveTask<String> {
                 index.setLemma_rank(entry.getValue());
                 indexRepository.saveAndFlush(index);
             } else {
-                for (int i = 0; i < lemmaList1.size(); i++) {
-                    if (lemmaList1.get(i).getLemma().equals(lemmaString) &&
-                            (lemmaList1.get(i).getSite().getId() == site.getId())) {
-                        lemmaList1.get(i).setFrequency(lemmaList1.get(i).getFrequency() + 1);
-                        lemmaRepository.saveAndFlush(lemmaList1.get(i));
-
+                for (Lemma lemma1 : lemmaList1) {
+                    if (lemma1.getLemma().equals(lemmaString) &&
+                            (lemma1.getSite().getId() == site.getId())) {
+                        lemma1.setFrequency(lemma1.getFrequency() + 1);
+                        lemmaRepository.saveAndFlush(lemma1);
                         Index index = new Index();
                         index.setPage(pageEntity);
-                        index.setLemma(lemmaList1.get(i));
+                        index.setLemma(lemma1);
                         index.setLemma_rank(entry.getValue());
                         indexRepository.saveAndFlush(index);
                         break;
@@ -167,7 +170,22 @@ public class TravelingTheWeb extends RecursiveTask<String> {
                 }
             }
         }
+        return "";
     }
+    /**
+     * формирование листа url
+     */
+    private List<String> formationListUrl(String url) throws InterruptedException, IOException {
+    List<String> linksFromTags = new ArrayList<>();
+    Document document = Jsoup.connect(url).get();
+            Thread.sleep(1000);
+    Elements elements = document.select("body").select("a");
+            elements.forEach(element -> {
+        linksFromTags.add(element.absUrl("href"));
+    });
+      return linksFromTags;
+    }
+
 }
 
 

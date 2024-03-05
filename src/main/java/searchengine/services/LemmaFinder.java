@@ -1,9 +1,7 @@
 package searchengine.services;
-
 import lombok.Data;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
-
 import java.io.IOException;
 import java.util.*;
 
@@ -13,8 +11,6 @@ public class LemmaFinder {
     private final LuceneMorphology luceneMorphology;
     private static final String WORD_TYPE_REGEX = "\\W\\w&&[^а-яА-Я\\s]";
     private static final String[] particlesNames = new String[]{"МЕЖД", "ПРЕДЛ", "СОЮЗ"};
-
-    //getInstance - получить экземпляр
     public static LemmaFinder getInstance() throws IOException {
         LuceneMorphology morphology= new RussianLuceneMorphology();
         return new LemmaFinder(morphology);
@@ -23,12 +19,6 @@ public class LemmaFinder {
     public LemmaFinder(LuceneMorphology luceneMorphology) {
         this.luceneMorphology = luceneMorphology;
     }
-
-
-    //Disallow construct - Запретить конструкцию
-    /*public LemmaFinderImpl(){
-        throw new RuntimeException("Disallow construct");
-    }*/
 
     /**
      * Метод разделяет текст на слова, находит все леммы и считает их количество.
@@ -44,31 +34,23 @@ public class LemmaFinder {
             if (word.isBlank()) {
                 continue;
             }
-
             List<String> wordBaseForms = luceneMorphology.getMorphInfo(word);
-            //anyWordBaseBelongToParticle(wordBaseForms) - true, если любое
-            // базовое слово принадлежит частице
             if (anyWordBaseBelongToParticle(wordBaseForms)) {
                 continue;
             }
-
             List<String> normalForms = luceneMorphology.getNormalForms(word);
             if (normalForms.isEmpty()) {
                 continue;
             }
-
             String normalWord = normalForms.get(0);
-
             if (lemmas.containsKey(normalWord)) {
                 lemmas.put(normalWord, lemmas.get(normalWord) + 1);
             } else {
                 lemmas.put(normalWord, 1);
             }
         }
-
         return lemmas;
     }
-
 
     /**
      * @param text текст из которого собираем все леммы
@@ -88,12 +70,11 @@ public class LemmaFinder {
         }
         return lemmaSet;
     }
-    //anyMatch, если хоть один элемент "имеет свойство частицы" - hasParticleProperty
+
     private boolean anyWordBaseBelongToParticle(List<String> wordBaseForms) {
         return wordBaseForms.stream().anyMatch(this::hasParticleProperty);
     }
 
-    //проверяет относится ли wordBase к particlesNames
     private boolean hasParticleProperty(String wordBase) {
         for (String property : particlesNames) {
             if (wordBase.toUpperCase().contains(property)) {

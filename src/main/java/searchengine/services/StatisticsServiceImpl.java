@@ -1,10 +1,7 @@
 package searchengine.services;
-
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import searchengine.config.SitesList;
 import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
@@ -16,18 +13,15 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
-
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
-@Service
-@Data
+@Getter
+@Setter
 public class StatisticsServiceImpl implements StatisticsService {
     @Autowired
     private PageRepository pageRepository;
@@ -37,55 +31,70 @@ public class StatisticsServiceImpl implements StatisticsService {
     private LemmaRepository lemmaRepository;
     @Autowired
     private IndexRepository indexRepository;
+    TotalStatistics total;
+    StatisticsResponse response;
+    StatisticsData data;
+    DetailedStatisticsItem item;
 
+    @Autowired
+    public StatisticsServiceImpl(TotalStatistics total, StatisticsResponse response, StatisticsData data) {
+        this.total = total;
+        this.response = response;
+        this.data = data;
+    }
+    /**
+     * запуск формирования данных по статистике
+     */
     @Override
     public StatisticsResponse getStatistics() throws SQLException {
-
-        TotalStatistics total = new TotalStatistics();
         List<searchengine.model.Site> sitesList = siteRepository.findAll();
-
         total.setSites(sitesList.size());
-
-        boolean indexing = false;
-        for (Site site : sitesList) {
-            if (site.getStatus().equals("INDEXING")) {
-                indexing = true;
-            }
-        }
-        total.setIndexing(indexing);
-
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
-        for(int i = 0; i < sitesList.size(); i++) {
-            Site site = sitesList.get(i);
-            DetailedStatisticsItem item = new DetailedStatisticsItem();
-            item.setName(site.getName());
-            item.setUrl(site.getUrl());
+        for (Site site : sitesList) {
+            if (site.getStatus().toString().equals("INDEXING")) {
+                total.setIndexing(true);
+            } else {
+                total.setIndexing(false);
+            }
             List<Page> pageList = pageRepository.findBySite_id(site.getId());
             int pages = pageList.size();
-
             List<Lemma> lemmaList = lemmaRepository.findBySite_id(site.getId());
             int lemmas = lemmaList.size();
-            item.setPages(pages);
-            item.setLemmas(lemmas);
-            item.setStatus(site.getStatus().toString());
-            item.setError(site.getLast_error());
 
             LocalDateTime localDateTime = site.getStatus_time();
             ZonedDateTime zdt = ZonedDateTime.of(localDateTime, ZoneId.systemDefault());
             long date = zdt.toInstant().toEpochMilli();
-            item.setStatusTime(date);
+            DetailedStatisticsItem item = new DetailedStatisticsItem();
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
-            detailed.add(item);
+            detailed.add(formationDetailedStatisticsItem(item, site.getUrl(), site.getName(), site.getStatus().toString(),
+                    date, site.getLast_error(), pages, lemmas));
         }
-
-        StatisticsResponse response = new StatisticsResponse();
-        StatisticsData data = new StatisticsData();
+        return formationStatisticsResponse(total, detailed);
+    }
+    /**
+     * заполнение объекта DetailedStatisticsItem
+     */
+     private DetailedStatisticsItem formationDetailedStatisticsItem(DetailedStatisticsItem item , String url,
+                                                                    String name, String status,
+                                                                   long statusTime, String error, int pages, int lemmas) {
+        item.setUrl(url);
+        item.setName(name);
+        item.setStatus(status);
+        item.setStatusTime(statusTime);
+        item.setError(error);
+        item.setPages(pages);
+        item.setLemmas(lemmas);
+        return item;
+    }
+     /**
+     * заполнение объекта StatisticsResponse
+     */
+     private StatisticsResponse formationStatisticsResponse(TotalStatistics total, List<DetailedStatisticsItem> detailed) {
         data.setTotal(total);
         data.setDetailed(detailed);
         response.setStatistics(data);
         response.setResult(true);
         return response;
     }
-
 }

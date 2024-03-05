@@ -1,9 +1,8 @@
 package searchengine.services;
 
+import searchengine.dto.IndexingPage.IndexingPageResponse;
+
 import java.io.IOException;
-import java.net.MalformedURLException;
-
 public interface PageIndexingService {
-
-    void pageIndexing(String url, searchengine.config.Site site) throws IOException, InterruptedException;
+    IndexingPageResponse pageIndexing(String url) throws IOException, InterruptedException;
 }

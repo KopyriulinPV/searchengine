@@ -1,8 +1,5 @@
 package searchengine.services;
-
 import lombok.Data;
-import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
-import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
@@ -12,21 +9,17 @@ import searchengine.dto.search.SearchResponse;
 import searchengine.model.Index;
 import searchengine.model.Lemma;
 import searchengine.model.Page;
+import searchengine.model.Site;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
-
 import java.io.IOException;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
 @Data
 @Service
 public class SearchServicesImpl implements  SearchServices {
-
     @Autowired
     private PageRepository pageRepository;
     @Autowired
@@ -35,270 +28,210 @@ public class SearchServicesImpl implements  SearchServices {
     private LemmaRepository lemmaRepository;
     @Autowired
     private IndexRepository indexRepository;
-
-
-
+    SearchResponse searchResponse;
+    LemmaFinder lemmaFinder;
+    @Autowired
+    public SearchServicesImpl(SearchResponse searchResponse, LemmaFinder lemmaFinder) {
+        this.searchResponse = searchResponse;
+        this.lemmaFinder = lemmaFinder;
+    }
+    /**
+     * запускаем поиск
+     */
     @Override
-    public SearchResponse getSearch(String query, String offset, String limit, String site) throws IOException {
-
-        LemmaFinder lemmaFinder = new LemmaFinder(new RussianLuceneMorphology());
-        //НАЧАЛО Это Map лемм, которые мы получаем из query
-        Map<String, Integer> lemmaFinderMap = lemmaFinder.collectLemmas(query);
-        //КОНЕЦ Это Map лемм, которые мы получаем из query
-
-        //НАЧАЛО формируем set лемм из lemmaFinderMap(был получен из query)
-        Set<String> lemmaSet = new HashSet<>();
-        for (Map.Entry<String, Integer> entry : lemmaFinderMap.entrySet()) {
-            String lemmaString = entry.getKey();
-            lemmaSet.add(lemmaString);
-        }
-        //КОНЕЦ формируем set лемм из lemmaFinderMap(был получен из query)
-
-        //НАЧАЛО на основании полученного set лемм (из query) формируем Map<String, Integer>
-        // lemmaFrequency и Set<Integer> frequencySetLemmas сопоставляя леммы (из query) с БД
-        Map<String, Integer> lemmaFrequency = new HashMap<>();
-        Set<Integer> frequencySetLemmas = new HashSet<>();
-        for (String lemma : lemmaSet) {
-            List<Lemma> qq = lemmaRepository.findByLemma(lemma);
-            int ww = 1;
-            for (Lemma lemma1 : qq) {
-                if (ww <= lemma1.getFrequency()) {
-                    ww = lemma1.getFrequency();
+    public SearchResponse getSearch(String query, String offset,
+                                    String limit, String site) throws IOException {
+        Set<String> formationLemmaSet = formationLemmaSet(query);
+        List<Lemma> listSortedAscendingLemmaFrequency = listSortedAscendingLemmaFrequency(formationLemmaSet, site);
+        List<Page> listPageWithLowestFrequency = listPageWithLowestFrequency(listSortedAscendingLemmaFrequency);
+        Set<Page> listOfPagesFilteredByTheFollowingLemmas = listOfPagesFilteredByTheFollowingLemmas(listSortedAscendingLemmaFrequency,
+                listPageWithLowestFrequency);
+        LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance = sortedMapDescendingRelativeRelevance(listOfPagesFilteredByTheFollowingLemmas);
+        return formationSearchResponse(sortedMapDescendingRelativeRelevance, query);
+    }
+    /**
+     * формируем SearchResponse
+     */
+     private SearchResponse formationSearchResponse(LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance,
+                                                    String query) {
+         List<searchengine.dto.search.Data> listData = new ArrayList<>();
+         for (Map.Entry<Page, Float> entry : sortedMapDescendingRelativeRelevance.entrySet()) {
+            searchengine.dto.search.Data dataItem = new searchengine.dto.search.Data();
+            dataItem.setSite(entry.getKey().getSite().getUrl());
+            dataItem.setSiteName(entry.getKey().getSite().getName());
+            dataItem.setUri(entry.getKey().getPath());
+            try {
+                Document document = Jsoup.connect(entry.getKey().getSite().getUrl() + entry.getKey().getPath()).get();
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
-            }
-            frequencySetLemmas.add(ww);
-            lemmaFrequency.put(lemma, ww);
-        }
-        //КОНЕЦ на основании полученного set лемм (из query) формируем Map<String, Integer>
-        // lemmaFrequency и Set<Integer> frequencySetLemmas сопоставляя леммы (из query) с БД
-
-        //НАЧАЛО сортируем Set<Integer> frequencySetLemmas и находим лемму с наименьшим
-        // Frequency  int lowestFrequencyLemma
-        frequencySetLemmas.stream().sorted();
-        List<Integer> listSortedFrequency = frequencySetLemmas.stream().toList();
-        int lowestFrequencyLemma =  listSortedFrequency.get(0);
-        //КОНЕЦ сортируем Set<Integer> frequencySetLemmas и находим лемму с наименьшим
-        // Frequency  int lowestFrequencyLemma
-
-        //НАЧАЛО сортировка lemmaFrequency по возрастанию frequency
-        Map<String, Integer> listSortedLemmaFrequency = lemmaFrequency.entrySet().stream()
-                .sorted(Comparator.comparingInt(e -> e.getValue()))
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (a, b) -> { throw new AssertionError(); },
-                        LinkedHashMap::new));
-        //КОНЕЦ сортировка lemmaFrequency по возрастанию frequency
-
-        //НАЧАЛО формирует listPage список отфильтрованных Page по частоте лемм
-        List<Page> listPage = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : listSortedLemmaFrequency.entrySet()) {
-
-            if (lowestFrequencyLemma == entry.getValue()) {
-                List<Lemma> rr = lemmaRepository.findByLemma(entry.getKey());
-                for (Lemma lemma : rr) {
-                    if (site == null) {
-                        addPage(lemma, listPage);
-                    } else if (lemma.getSite().getId() == siteRepository.findAllContains(site).get(0).getId()) {
-                        addPage(lemma, listPage);
-                    }
+                Elements elements = document.select("head > title");
+                dataItem.setTitle(elements.text());
+                String stringDocument = document.getAllElements().toString();
+                SnippetService snippetService = new SnippetServiceImpl(lemmaFinder);
+                String snippet = snippetService.getSnippet(query, stringDocument);
+                if (snippet == null) {
+                    continue;
                 }
+                dataItem.setSnippet(snippet);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                continue;
             }
+            dataItem.setRelevance(entry.getValue());
+            listData.add(dataItem);
         }
-
-        List<Page> sortedListPage = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : listSortedLemmaFrequency.entrySet()) {
-            for (Page page : listPage) {
-                List<Lemma> lemmas = lemmaRepository.findByLemma(entry.getKey());
-                for (Lemma lemma : lemmas) {
-                    List<Index> indices = indexRepository.findByLemma_id(lemma.getId());
-                    for (Index index : indices) {
-                        if (index.getPage().getId() == page.getId()) {
-                            sortedListPage.add(index.getPage());
-                        }
-                     }
-                }
-            }
-            if (!(sortedListPage.size() == 0)) {
-            listPage.clear();
-            for (Page page : sortedListPage) {
-                listPage.add(page);
-            }
-            sortedListPage.clear();
-            }
+        if (listData.size() == 0) {
+            searchResponse.setResult(false);
+            searchResponse.setError("Задан пустой поисковый запрос");
+        } else {
+            searchResponse.setResult(true);
+            searchResponse.setCount(listData.size());
+            searchResponse.setData(listData);
         }
-
-        //КОНЕЦ формирует listPage список отфильтрованных Page по частоте лемм
-
-
-        //НАЧАЛО получаем наибольший rank
-        List<Integer> searchMaxRank = new ArrayList<>();
-        for (Page page : listPage) {
-            int qq = 0;
-            List<Index> indexes = indexRepository.findByPage_id(page.getId());
-            for (Index index : indexes) {
-                qq += index.getLemma_rank();
-            }
-            searchMaxRank.add(qq);
-        }
-        Iterator<Integer> iterator = searchMaxRank.stream().iterator();
-        int maxRank = 0;
-        while (iterator.hasNext()) {
-            Integer next = iterator.next();
-            if (maxRank <= next) {
-                maxRank = next;
-            }
-        }
-        //КОНЕЦ получаем наибольший rank
-
-        //НАЧАЛО вычисляем относительную релевантность для каждой страницы и сортируем
-        // Map по убыванию относительной релевантности, получаем sortedMap
-        Map<Page, Float> rankAmountsForEachPage = new HashMap<>();
-        for (Page page : listPage) {
-            float qq = 0f;
-            List<Index> indexes = indexRepository.findByPage_id(page.getId());
-            for (Index index : indexes) {
-                qq += index.getLemma_rank();
-            }
-            float rr = qq/maxRank;
-            rankAmountsForEachPage.put(page, rr);
-        }
-        LinkedHashMap<Page, Float> sortedMap = rankAmountsForEachPage.entrySet()
-                .stream()
-                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
-                .collect(Collectors
-                        .toMap(Map.Entry::getKey,
-                                Map.Entry::getValue,
-                                (e1, e2) -> e1,
-                                LinkedHashMap::new));
-        //КОНЕЦ вычисляем относительную релевантность для каждой страницы и сортируем
-        // Map по убыванию относительной релевантности, получаем sortedMap
-
-       List<searchengine.dto.search.Data> listData = new ArrayList<>();
-
-        //НАЧАЛО перебираем page, формируем SearchResponse
-        for (Map.Entry<Page, Float> entry : sortedMap.entrySet()) {
-           searchengine.dto.search.Data dataItem = new searchengine.dto.search.Data();
-           dataItem.setSite(entry.getKey().getSite().getUrl());
-           dataItem.setSiteName(entry.getKey().getSite().getName());
-           dataItem.setUri(entry.getKey().getPath());
-           try{
-               Document document = Jsoup.connect(entry.getKey().getSite().getUrl() + entry.getKey().getPath()).get();
-               try {
-                   Thread.sleep(150);
-               } catch (InterruptedException e) {
-                   throw new RuntimeException(e);
-               }
-               Elements elements = document.select("head > title");
-
-               dataItem.setTitle(elements.text());
-
-               String stringDocument = document.getAllElements().toString();
-               String fatLemma = null;
-
-               for (Map.Entry<String, Integer> entry1 : listSortedLemmaFrequency.entrySet()) {
-                   Pattern pattern = Pattern.compile(entry1.getKey());
-                   Matcher matcher = pattern.matcher(stringDocument);
-                   if (matcher.find()) {
-                       if (!(stringDocument.indexOf(entry1.getKey()) == -1)) {
-                           dataItem.setSnippet(snippet(entry1.getKey(), document));
-                       }
-                   }
-
-
-
-              }
-           }
-           catch (Exception ex){
-               ex.toString();
-               continue;
-           }
-
-           dataItem.setRelevance(entry.getValue());
-           listData.add(dataItem);
-       }
-
-        SearchResponse searchResponse = new SearchResponse();
-        searchResponse.setResult(true);
-        searchResponse.setCount(574);
-        searchResponse.setData(listData);
-
         return searchResponse;
     }
-    //КОНЕЦ перебираем page, формируем SearchResponse
+    /**
+     * Формируем Set String лемм
+     */
+    private Set<String> formationLemmaSet (String query) throws IOException {
+        Set<String> formationLemmaSet = lemmaFinder.getLemmaSet(query);
+        return formationLemmaSet;
+    }
+    /**
+     * получаем List<Lemma> отсортированных по возрастанию частоты встречаемости
+     */
+    private List<Lemma> listSortedAscendingLemmaFrequency (Set<String> formationLemmaSet, String site) {
+        List<Lemma> lemmaList = new ArrayList<>();
+        for (String lemmaString : formationLemmaSet) {
+            List<Lemma> temporaryLemmaList = new ArrayList<>();
+            if (site == null) {
+                List<Lemma> qq = lemmaRepository.findByLemma(lemmaString);
+                for (Lemma lemma1 : qq) {
+                    temporaryLemmaList.add(lemma1);
+                }
+                Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
+                Collections.sort(temporaryLemmaList, comparator.reversed());
+                if (temporaryLemmaList.size() > 0) {
+                     lemmaList.add(temporaryLemmaList.get(0));
+                }
+            } else {
+                List<Site> sites = siteRepository.findAllContains(site);
+                Site modelSite = sites.get(0);
+                List<Lemma> qq = lemmaRepository.findAllContains(lemmaString, modelSite.getId());
+                for (Lemma lemma1 : qq) {
+                    temporaryLemmaList.add(lemma1);
+                }
+                Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
+                Collections.sort(temporaryLemmaList, comparator.reversed());
+                if (temporaryLemmaList.size() > 0) {
+                    lemmaList.add(temporaryLemmaList.get(0));
+                }
+            }
+        }
+        Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
+        Collections.sort(lemmaList, comparator);
+        return lemmaList;
+    }
+    /**
+     * По первой, самой редкой лемме из списка, находить все страницы, на которых она встречается, получаем List<Page>
+     */
+    private List<Page> listPageWithLowestFrequency(List<Lemma> listSortedAscendingLemmaFrequency) throws IOException {
+        List<Page> listPage = new ArrayList<>();
+        List<Index> listIndex = new ArrayList<>();
+        if (listSortedAscendingLemmaFrequency.size() > 0) {
+            listIndex = indexRepository.findByLemma_id(listSortedAscendingLemmaFrequency.get(0).getId());
+        }
+        for (Index index : listIndex) {
+            Optional<Page> pageOptional = pageRepository.findById(index.getPage().getId());
+            if (!(pageOptional == null)) {
+                listPage.add(pageOptional.get());
+            }
+        }
+        return listPage;
+    }
+    /**
+     * Ищем соответствия следующей леммы из списка полученного из метода listPageWithLowestFrequency, а затем повторяем
+     * операцию по каждой следующей лемме.
+     */
+    private Set<Page> listOfPagesFilteredByTheFollowingLemmas(List<Lemma> listSortedAscendingLemmaFrequency,
+                                                              List<Page> listPageWithLowestFrequency) {
+        Set<Page> setPage = new HashSet<>();
+        if (listSortedAscendingLemmaFrequency.size() == 1) {
+            for (Page page : listPageWithLowestFrequency) {
+                setPage.add(page);
+            }
+        }
+               for (int i = 1; i < listSortedAscendingLemmaFrequency.size(); i++) {
+                for (Page page : listPageWithLowestFrequency) {
+                    Index index = indexRepository.findAllContains(listSortedAscendingLemmaFrequency.get(i).getId(), page.getId());
+                    if (!(index == null)) {
+                        setPage.add(index.getPage());
+                    }
+                }
+                if (!(setPage.size() == 0)) {
+                listPageWithLowestFrequency.clear();
 
-
-
-    private void addPage(Lemma lemma, List<Page> listPage) {
-        List<Index> pp = indexRepository.findByLemma_id(lemma.getId());
-        for (Index yy : pp) {
-            listPage.add(yy.getPage());
+                for (Page page : setPage) {
+                    listPageWithLowestFrequency.add(page);
+                  }
+                }
+                if (i < (listSortedAscendingLemmaFrequency.size() - 1)) {
+                    setPage.clear();
+                }
+            }
+       return setPage;
+    }
+    /**
+     * получаем максимальную абсолютную релевантность
+     */
+    private int searchMaxRank(Set<Page> setPage) {
+    List<Integer> searchMaxRank = new ArrayList<>();
+        for (Page page : setPage) {
+        int qq = 0;
+        List<Index> indexes = indexRepository.findByPage_id(page.getId());
+        for (Index index : indexes) {
+            qq += index.getLemma_rank();
+        }
+        searchMaxRank.add(qq);
+    }
+    Iterator<Integer> iterator = searchMaxRank.stream().iterator();
+    int maxRank = 0;
+        while (iterator.hasNext()) {
+        Integer next = iterator.next();
+        if (maxRank <= next) {
+            maxRank = next;
         }
     }
+        return maxRank;
+    }
+    /**
+     * сортирует страницы по убыванию релевантности
+     */
+    private LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance(Set<Page> setPage) {
 
-    private String snippet(String word, Document document) {
-
-        String qq = document.getAllElements().toString();
-
-        String regex = "[//<&>\"\"]";
-        int indexEnd = 0;
-        for (int i = qq.indexOf(word); i < (qq.indexOf(word) + 120); i++) {
-
-            Character tt = qq.charAt(i);
-            String ww = tt.toString();
-            Pattern pattern = Pattern.compile(regex);
-            Matcher matcher = pattern.matcher(ww);
-            if (matcher.find()) {
-                indexEnd = i;
-                break;
-            }
+    Map<Page, Float> rankAmountsForEachPage = new HashMap<>();
+        for (Page page : setPage) {
+        float qq = 0f;
+        List<Index> indexes = indexRepository.findByPage_id(page.getId());
+        for (Index index : indexes) {
+            qq += index.getLemma_rank();
         }
+        float rr = qq/searchMaxRank(setPage);
+        rankAmountsForEachPage.put(page, rr);
+    }
+    LinkedHashMap<Page, Float> sortedMap = rankAmountsForEachPage.entrySet()
+            .stream()
+            .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+            .collect(Collectors
+                    .toMap(Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (e1, e2) -> e1,
+                            LinkedHashMap::new));
 
-        int indexStart = 0;
-        for (int j = qq.indexOf(word); j > (qq.indexOf(word) - 120); --j) {
-            Character tt = qq.charAt(j);
-            String ww = tt.toString();
-            Pattern pattern = Pattern.compile(regex);
-            Matcher matcher = pattern.matcher(ww);
-            if (matcher.find()) {
-                indexStart = j;
-                break;
-            }
-        }
-        if ((indexStart == 0)&&((qq.indexOf(word) - 120) > 0)) {
-            indexStart = qq.indexOf(word) - 120;
-        }
-
-        StringBuilder stringBuilder = new StringBuilder();
-        for (int q = indexStart; q <= indexEnd; q++) {
-            Character kk = qq.charAt(q);
-            stringBuilder.append(kk.toString());
-
-        }
-        String snippet1 = stringBuilder.toString();
-        //НАЧАЛО очищаем snippet от мусора
-        String snippet = snippet1.replaceAll("[//<&>\"\"\n]+", "");
-        //КОНЕЦ очищаем snippet от мусора
-
-
-        String regex2 = word ;
-        /*+ "[^,\\s]+"*/
-        Pattern pattern = Pattern.compile(regex2);
-        Matcher matcher = pattern.matcher(snippet);
-        String finalSnippet = "";
-        while (matcher.find()) {
-
-            int start = matcher.start();
-            String beginIndexToEndIndexFirst = snippet.substring(0, start);
-
-            int end = matcher.end();
-            String beginIndexToEndIndexSecond = snippet.substring(end);
-
-            finalSnippet = beginIndexToEndIndexFirst + "<b>" + snippet.substring(start, end) +
-                    "</b>" + beginIndexToEndIndexSecond;
-
-        }
-        return finalSnippet;
+        return sortedMap;
     }
 }
 

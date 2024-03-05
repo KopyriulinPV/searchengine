@@ -1,9 +1,9 @@
 indexing-settings:
   sites:
-    - url: https://dimonvideo.ru/
-      name: dimonvideo
-    - url: https://et-cetera.ru/mobile/
-      name: et-cetera.ru
+    - url: http://www.playback.ru/
+      name: playback
+    - url: https://www.svetlovka.ru/
+      name: svetlovka
 
 
 server:
