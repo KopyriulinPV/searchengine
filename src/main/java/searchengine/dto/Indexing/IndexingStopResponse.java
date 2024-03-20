@@ -1,8 +1,9 @@
 package searchengine.dto.Indexing;
+import lombok.Getter;
+import lombok.Setter;
 
-import lombok.Data;
-
-@Data
+@Setter
+@Getter
 public class IndexingStopResponse {
     private boolean result;
     private String error;

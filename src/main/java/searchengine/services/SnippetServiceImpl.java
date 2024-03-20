@@ -1,12 +1,14 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Data
+@Setter
+@Getter
 @Service
 public class SnippetServiceImpl implements SnippetService {
     LemmaFinder lemmaFinder;
@@ -62,7 +64,8 @@ public class SnippetServiceImpl implements SnippetService {
     /**
      * чистка текста, выделение жирным
      */
-    private String purgeText(int indexStart, int indexEnd, String stringDocument, String word, List<String> snippetList) {
+    private String purgeText(int indexStart, int indexEnd, String stringDocument, String word,
+                             List<String> snippetList) {
         StringBuilder stringBuilder = new StringBuilder();
         for (int q = indexStart; q <= indexEnd; q++) {
             Character kk = stringDocument.charAt(q);

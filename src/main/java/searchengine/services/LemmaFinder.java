@@ -1,12 +1,13 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import java.io.IOException;
 import java.util.*;
 
-
-@Data
+@Getter
+@Setter
 public class LemmaFinder {
     private final LuceneMorphology luceneMorphology;
     private static final String WORD_TYPE_REGEX = "\\W\\w&&[^а-яА-Я\\s]";

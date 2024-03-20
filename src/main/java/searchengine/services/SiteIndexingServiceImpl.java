@@ -1,5 +1,6 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
@@ -15,9 +16,10 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
-
+import java.util.concurrent.atomic.AtomicBoolean;
 @Service
-@Data
+@Setter
+@Getter
 public class SiteIndexingServiceImpl implements SiteIndexingService {
     @Autowired
     private PageRepository pageRepository;
@@ -28,65 +30,65 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
     @Autowired
     private IndexRepository indexRepository;
     private final SitesList sites;
-    public static boolean indexingIsGone = false;
+    public static AtomicBoolean indexingIsGone;
     private IndexingStartResponse indexingStartResponse;
     private IndexingStopResponse indexingStopResponse;
     private LemmaFinder lemmaFinder;
     @Autowired
     public SiteIndexingServiceImpl(SitesList sites, IndexingStartResponse indexingStartResponse,
-                                   IndexingStopResponse indexingStopResponse, LemmaFinder lemmaFinder) {
+                                   IndexingStopResponse indexingStopResponse, LemmaFinder lemmaFinder,
+                                   AtomicBoolean indexingIsGone) {
         this.sites = sites;
         this.indexingStartResponse = indexingStartResponse;
         this.indexingStopResponse = indexingStopResponse;
         this.lemmaFinder = lemmaFinder;
+        this.indexingIsGone = indexingIsGone;
     }
     /**
      * ответ на запрос старт индексации
      */
-    public IndexingStartResponse indexingStartResponse() {
-        if (indexingIsGone == true) {
+    public IndexingStartResponse indexingStartResponse() throws IOException, InterruptedException {
+        if (indexingIsGone.getOpaque() == false) {
+            for (searchengine.config.Site site : sites.getSites()) {
+                Iterable<searchengine.model.Site> iterable = siteRepository.findAll();
+                Iterator<searchengine.model.Site> siteIterator = iterable.iterator();
+                while (siteIterator.hasNext()) {
+                    searchengine.model.Site iteratorNext = siteIterator.next();
+                    if (iteratorNext.getUrl().contains(site.getUrl())) {
+                        siteRepository.delete(iteratorNext);
+                    }
+                }
+            }
+            indexingIsGone.set(true);
+            TravelingTheWeb.indexingStop = false;
+            indexingStartResponse.setResult(true);
+            siteIndexing();
+        } else {
             indexingStartResponse.setResult(false);
             indexingStartResponse.setError("Индексация уже запущена");
-            return indexingStartResponse;
         }
-        indexingIsGone = true;
-        TravelingTheWeb.indexingStop = false;
-        indexingStartResponse.setResult(true);
         return indexingStartResponse;
     }
     /**
      * ответ на запрос остановка индексации
      */
     public IndexingStopResponse indexingStopResponse() {
-
-        if (indexingIsGone == false) {
+        if (indexingIsGone.getOpaque() == false) {
             indexingStopResponse.setResult(false);
             indexingStopResponse.setError("Индексация не запущена");
-            return indexingStopResponse;
+        } else {
+            TravelingTheWeb.indexingStop = true;
+            indexingIsGone.set(false);
+            indexingStopResponse.setResult(true);
         }
-        TravelingTheWeb.indexingStop = true;
-        indexingIsGone = false;
-        indexingStopResponse.setResult(true);
         return indexingStopResponse;
     }
     /**
      * запуск алгоритма индексации, запуск ForkJoinPool по обходу сайта
      */
-    public void siteIndexing(SiteRepository siteRepository, PageRepository pageRepository,
-                             LemmaRepository lemmaRepository, IndexRepository indexRepository)
+    public void siteIndexing()
             throws IOException, InterruptedException {
         for (searchengine.config.Site site : sites.getSites()) {
-            if (indexingIsGone == false) {
-                break;
-            }
-            Iterable<searchengine.model.Site> iterable = siteRepository.findAll();
-            Iterator<searchengine.model.Site> siteIterator = iterable.iterator();
-            while (siteIterator.hasNext()) {
-                searchengine.model.Site iteratorNext = siteIterator.next();
-                if (iteratorNext.getUrl().equals(site.getUrl())) {
-                    siteRepository.delete(iteratorNext);
-                }
-            }
             new Thread(()-> {
                 Site newSite = new Site();
                 newSite.setName(site.getName());
@@ -95,9 +97,9 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
                 newSite.setStatus(Status.INDEXING);
                 newSite.setStatus_time(LocalDateTime.now());
                 siteRepository.saveAndFlush(newSite);
-
                 TravelingTheWeb action = new TravelingTheWeb(newSite, pageRepository,
                         siteRepository, site.getUrl(), lemmaRepository, indexRepository, lemmaFinder);
+
                 ForkJoinPool pool = new ForkJoinPool(4);
                 String listPath = pool.invoke(action);
                 indexingCompletionMethod(pool, listPath, newSite);

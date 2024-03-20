@@ -1,20 +1,12 @@
 package searchengine.services;
-
-
 import searchengine.dto.Indexing.IndexingStartResponse;
 import searchengine.dto.Indexing.IndexingStopResponse;
-import searchengine.repositories.IndexRepository;
-import searchengine.repositories.LemmaRepository;
-import searchengine.repositories.PageRepository;
-import searchengine.repositories.SiteRepository;
-
 import java.io.IOException;
 
 public interface SiteIndexingService {
-    void siteIndexing(SiteRepository siteRepository, PageRepository pageRepository,
-                      LemmaRepository lemmaRepository, IndexRepository indexRepository) throws IOException, InterruptedException;
+    void siteIndexing() throws IOException, InterruptedException;
 
-    IndexingStartResponse indexingStartResponse();
+    IndexingStartResponse indexingStartResponse() throws IOException, InterruptedException;
 
     IndexingStopResponse indexingStopResponse();
 }

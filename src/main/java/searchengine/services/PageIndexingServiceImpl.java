@@ -1,5 +1,6 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -20,7 +21,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Data
+@Setter
+@Getter
 @Service
 public class PageIndexingServiceImpl implements PageIndexingService {
     @Autowired
@@ -106,7 +108,6 @@ public class PageIndexingServiceImpl implements PageIndexingService {
      * сохраняем в БД сущность site и page
      */
     private void indexingUrlSitePage(URL urlIndexingPage, searchengine.config.Site siteConfig) throws IOException {
-
         List<Site> sitesBeforeRecording = siteRepository.findAllContains(urlIndexingPage.getHost());
         if (sitesBeforeRecording.size() == 0) {
             Site site2 = new Site();

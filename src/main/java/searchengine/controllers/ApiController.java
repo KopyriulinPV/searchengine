@@ -1,46 +1,22 @@
 package searchengine.controllers;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import searchengine.config.Config;
 import searchengine.dto.Indexing.IndexingStartResponse;
 import searchengine.dto.Indexing.IndexingStopResponse;
 import searchengine.dto.IndexingPage.IndexingPageResponse;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-
-import searchengine.repositories.IndexRepository;
-import searchengine.repositories.LemmaRepository;
-import searchengine.repositories.PageRepository;
-import searchengine.repositories.SiteRepository;
 import searchengine.services.*;
-
 import java.io.IOException;
-
 import java.sql.SQLException;
-
 
 @RestController
 @RequestMapping("/api")
 public class ApiController {
-
-    @Autowired
-    private PageRepository pageRepository;
-    @Autowired
-    private SiteRepository siteRepository;
-    @Autowired
-    private LemmaRepository lemmaRepository;
-    @Autowired
-    private IndexRepository indexRepository;
-
     private StatisticsService statisticsService;
-
     private PageIndexingService pageIndexingService;
-
     private SiteIndexingService siteIndexingService;
-
     private SearchServices searchServices;
 
     @Autowired
@@ -59,9 +35,7 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public IndexingStartResponse startIndexing() throws IOException, InterruptedException {
-        IndexingStartResponse indexingStartResponse = siteIndexingService.indexingStartResponse();
-        siteIndexingService.siteIndexing(siteRepository, pageRepository, lemmaRepository, indexRepository);
-        return indexingStartResponse;
+        return siteIndexingService.indexingStartResponse();
     }
 
     @GetMapping("/stopIndexing")
@@ -79,6 +53,5 @@ public class ApiController {
     public SearchResponse search(String query, String offset, String limit, String site) throws SQLException, IOException, InterruptedException {
         return searchServices.getSearch(query, offset, limit, site);
     }
-
 }
 

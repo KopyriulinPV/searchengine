@@ -33,6 +33,4 @@ public class Page {
 
     @OneToMany(mappedBy = "page", cascade = CascadeType.ALL)
     private List<searchengine.model.Index> indices;
-
-
 }

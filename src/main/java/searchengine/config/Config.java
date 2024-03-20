@@ -1,6 +1,5 @@
 package searchengine.config;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
-import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
@@ -8,43 +7,16 @@ import searchengine.dto.Indexing.IndexingStartResponse;
 import searchengine.dto.Indexing.IndexingStopResponse;
 import searchengine.dto.IndexingPage.IndexingPageResponse;
 import searchengine.dto.search.SearchResponse;
-import searchengine.dto.statistics.DetailedStatisticsItem;
-import searchengine.dto.statistics.StatisticsData;
-import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.dto.statistics.TotalStatistics;
 import searchengine.services.LemmaFinder;
-import searchengine.services.StatisticsServiceImpl;
 import java.io.IOException;
-import static org.springframework.context.annotation.ScopedProxyMode.TARGET_CLASS;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Beans StatisticsService
  */
 @Configuration
 public class Config {
-    @Bean
-    @Scope(value = ConfigurableBeanFactory.SCOPE_PROTOTYPE, proxyMode = TARGET_CLASS)
-    public StatisticsServiceImpl statisticsServiceImpll() {
-        return new StatisticsServiceImpl(total(), statisticsResponse(), data());
-    }
-
-    @Bean
-    @Scope(value = "prototype")
-    public StatisticsResponse statisticsResponse() {
-        return new StatisticsResponse();
-    }
-
-    @Bean
-    @Scope(value = "prototype")
-    public TotalStatistics total() {
-        return new TotalStatistics();
-    }
-
-    @Bean
-    @Scope(value = "prototype")
-    public StatisticsData data() {
-        return new StatisticsData();
-    }
-    /**
+     /**
      * Beans SiteIndexingService
      */
     @Bean
@@ -81,5 +53,13 @@ public class Config {
     @Scope(value = "prototype")
     public LemmaFinder lemmaFinder() throws IOException {
         return new LemmaFinder(new RussianLuceneMorphology());
+    }
+    /**
+     * Beans SearchServices
+     */
+    @Bean
+    @Scope
+    public AtomicBoolean indexingIsGone() {
+        return new AtomicBoolean();
     }
 }

@@ -1,9 +1,11 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
@@ -21,18 +23,22 @@ import java.util.regex.Pattern;
 import searchengine.repositories.SiteRepository;
 
 
-@Data
 @Service
+@Setter
+@Getter
 public class TravelingTheWeb extends RecursiveTask<String> {
     private Site site;
+    @Autowired
     private PageRepository pageRepository;
+    @Autowired
     private SiteRepository siteRepository;
+    @Autowired
     private LemmaRepository lemmaRepository;
+    @Autowired
     private IndexRepository indexRepository;
     private String url;
     public static boolean indexingStop;
     private LemmaFinder lemmaFinder;
-
     public TravelingTheWeb(Site site, PageRepository pageRepository,
                            SiteRepository siteRepository, String url,
                            LemmaRepository lemmaRepository, IndexRepository indexRepository, LemmaFinder lemmaFinder) {
@@ -44,6 +50,7 @@ public class TravelingTheWeb extends RecursiveTask<String> {
         this.indexRepository = indexRepository;
         this.lemmaFinder = lemmaFinder;
     }
+
     public TravelingTheWeb() {
     }
     String regex = "http[s]?://[^#, \\s]*\\.?[a-z]*\\.ru[^#,\\s]*";
@@ -51,7 +58,7 @@ public class TravelingTheWeb extends RecursiveTask<String> {
     @Override
     protected String compute() {
         try {
-
+            System.out.println(site.getUrl() + " " + Thread.currentThread());
              for (String tag : formationListUrl(url)) {
                 if (tag.matches(regex)) {
                     URL pathUrl = new URL(tag);
@@ -112,15 +119,12 @@ public class TravelingTheWeb extends RecursiveTask<String> {
 
         Document document1 = Jsoup.connect(nexUrl).get();
         Thread.sleep(1000);
-
         pageEntity.setContent(document1.getAllElements().toString());
-
         pageRepository.saveAndFlush(pageEntity);
         String indexingStop = indexingLemmaIndex(nexUrl, pageEntity);
         if (indexingStop.matches("Индексация остановлена пользователем")) {
             return "Индексация остановлена пользователем";
         }
-
         action.join();
         return "";
     }
@@ -185,7 +189,6 @@ public class TravelingTheWeb extends RecursiveTask<String> {
     });
       return linksFromTags;
     }
-
 }
 
 

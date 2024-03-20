@@ -1,4 +1,3 @@
-
 package searchengine.model;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,7 +21,6 @@ public class Site {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')")
     private Status status;
-
 
     @Column(nullable = false, columnDefinition = "DATETIME")
     private LocalDateTime status_time;

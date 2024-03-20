@@ -2,6 +2,7 @@ package searchengine.services;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
@@ -22,6 +23,7 @@ import java.util.List;
 
 @Getter
 @Setter
+@Service
 public class StatisticsServiceImpl implements StatisticsService {
     @Autowired
     private PageRepository pageRepository;
@@ -31,16 +33,8 @@ public class StatisticsServiceImpl implements StatisticsService {
     private LemmaRepository lemmaRepository;
     @Autowired
     private IndexRepository indexRepository;
-    TotalStatistics total;
-    StatisticsResponse response;
-    StatisticsData data;
-    DetailedStatisticsItem item;
 
-    @Autowired
-    public StatisticsServiceImpl(TotalStatistics total, StatisticsResponse response, StatisticsData data) {
-        this.total = total;
-        this.response = response;
-        this.data = data;
+    public StatisticsServiceImpl() {
     }
     /**
      * запуск формирования данных по статистике
@@ -48,6 +42,7 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Override
     public StatisticsResponse getStatistics() throws SQLException {
         List<searchengine.model.Site> sitesList = siteRepository.findAll();
+        TotalStatistics total = new TotalStatistics();
         total.setSites(sitesList.size());
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
         for (Site site : sitesList) {
@@ -64,10 +59,9 @@ public class StatisticsServiceImpl implements StatisticsService {
             LocalDateTime localDateTime = site.getStatus_time();
             ZonedDateTime zdt = ZonedDateTime.of(localDateTime, ZoneId.systemDefault());
             long date = zdt.toInstant().toEpochMilli();
-            DetailedStatisticsItem item = new DetailedStatisticsItem();
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
-            detailed.add(formationDetailedStatisticsItem(item, site.getUrl(), site.getName(), site.getStatus().toString(),
+            detailed.add(formationDetailedStatisticsItem(site.getUrl(), site.getName(), site.getStatus().toString(),
                     date, site.getLast_error(), pages, lemmas));
         }
         return formationStatisticsResponse(total, detailed);
@@ -75,9 +69,9 @@ public class StatisticsServiceImpl implements StatisticsService {
     /**
      * заполнение объекта DetailedStatisticsItem
      */
-     private DetailedStatisticsItem formationDetailedStatisticsItem(DetailedStatisticsItem item , String url,
-                                                                    String name, String status,
+     private DetailedStatisticsItem formationDetailedStatisticsItem(String url, String name, String status,
                                                                    long statusTime, String error, int pages, int lemmas) {
+        DetailedStatisticsItem item = new DetailedStatisticsItem();
         item.setUrl(url);
         item.setName(name);
         item.setStatus(status);
@@ -90,9 +84,12 @@ public class StatisticsServiceImpl implements StatisticsService {
      /**
      * заполнение объекта StatisticsResponse
      */
-     private StatisticsResponse formationStatisticsResponse(TotalStatistics total, List<DetailedStatisticsItem> detailed) {
+     private StatisticsResponse formationStatisticsResponse(TotalStatistics total,
+                                                            List<DetailedStatisticsItem> detailed) {
+        StatisticsData data = new StatisticsData();
         data.setTotal(total);
         data.setDetailed(detailed);
+        StatisticsResponse response = new StatisticsResponse();
         response.setStatistics(data);
         response.setResult(true);
         return response;

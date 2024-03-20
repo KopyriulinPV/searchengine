@@ -2,8 +2,8 @@ indexing-settings:
   sites:
     - url: http://www.playback.ru/
       name: playback
-    - url: https://www.svetlovka.ru/
-      name: svetlovka
+    - url: https://lenta.ru/
+      name: lenta.ru
 
 
 server:

@@ -1,5 +1,6 @@
 package searchengine.services;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
@@ -17,7 +18,8 @@ import searchengine.repositories.SiteRepository;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-@Data
+@Setter
+@Getter
 @Service
 public class SearchServicesImpl implements  SearchServices {
     @Autowired
@@ -54,16 +56,16 @@ public class SearchServicesImpl implements  SearchServices {
      */
      private SearchResponse formationSearchResponse(LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance,
                                                     String query) {
-         List<searchengine.dto.search.Data> listData = new ArrayList<>();
+         List<searchengine.dto.search.FoundPageData> listData = new ArrayList<>();
          for (Map.Entry<Page, Float> entry : sortedMapDescendingRelativeRelevance.entrySet()) {
-            searchengine.dto.search.Data dataItem = new searchengine.dto.search.Data();
+            searchengine.dto.search.FoundPageData dataItem = new searchengine.dto.search.FoundPageData();
             dataItem.setSite(entry.getKey().getSite().getUrl());
             dataItem.setSiteName(entry.getKey().getSite().getName());
             dataItem.setUri(entry.getKey().getPath());
             try {
                 Document document = Jsoup.connect(entry.getKey().getSite().getUrl() + entry.getKey().getPath()).get();
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(150);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 }
