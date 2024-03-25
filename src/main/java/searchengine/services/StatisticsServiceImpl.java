@@ -1,6 +1,4 @@
 package searchengine.services;
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.dto.statistics.DetailedStatisticsItem;
@@ -21,20 +19,21 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
+
 @Service
 public class StatisticsServiceImpl implements StatisticsService {
-    @Autowired
     private PageRepository pageRepository;
-    @Autowired
     private SiteRepository siteRepository;
-    @Autowired
     private LemmaRepository lemmaRepository;
-    @Autowired
     private IndexRepository indexRepository;
 
-    public StatisticsServiceImpl() {
+    @Autowired
+    public StatisticsServiceImpl(PageRepository pageRepository, SiteRepository siteRepository,
+                                 LemmaRepository lemmaRepository, IndexRepository indexRepository) {
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
     }
     /**
      * запуск формирования данных по статистике

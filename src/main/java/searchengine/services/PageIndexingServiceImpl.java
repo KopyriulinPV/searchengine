@@ -1,6 +1,4 @@
 package searchengine.services;
-import lombok.Getter;
-import lombok.Setter;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -21,42 +19,41 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Setter
-@Getter
 @Service
 public class PageIndexingServiceImpl implements PageIndexingService {
-    @Autowired
     private PageRepository pageRepository;
-    @Autowired
     private SiteRepository siteRepository;
-    @Autowired
     private LemmaRepository lemmaRepository;
-    @Autowired
     private IndexRepository indexRepository;
     private final SitesList sites;
-    private IndexingPageResponse indexingPageResponse;
     private LemmaFinder lemmaFinder;
     @Autowired
-    public PageIndexingServiceImpl(SitesList sites, IndexingPageResponse indexingPageResponse, LemmaFinder lemmaFinder) {
+    public PageIndexingServiceImpl(PageRepository pageRepository, SiteRepository siteRepository,
+                                   LemmaRepository lemmaRepository, IndexRepository indexRepository,
+                                   SitesList sites, LemmaFinder lemmaFinder) {
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
         this.sites = sites;
-        this.indexingPageResponse = indexingPageResponse;
         this.lemmaFinder = lemmaFinder;
     }
     /**
      * запускаем индексацию page
      */
     public IndexingPageResponse pageIndexing(String url) throws IOException, InterruptedException {
-
         URL urlIndexingPage = normalURLForm(url);
         List<Page> pagesWithPathIndexingPage = pageRepository.findByPath(urlIndexingPage.getPath());
         for (searchengine.config.Site site : sites.getSites()) {
+            IndexingPageResponse indexingPageResponse = new IndexingPageResponse();
             successfulResponseToPageIndexing(urlIndexingPage, pagesWithPathIndexingPage, site, indexingPageResponse);
             if (indexingPageResponse.isResult()) {
                 return indexingPageResponse;
             }
         }
-        indexingPageResponse.setError("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
-        return indexingPageResponse;
+        IndexingPageResponse indexingPageResponse2 = new IndexingPageResponse();
+        indexingPageResponse2.setError("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
+        return indexingPageResponse2;
     }
     /**
      * формируем indexingPageResponse
@@ -65,6 +62,7 @@ public class PageIndexingServiceImpl implements PageIndexingService {
     searchengine.config.Site site, IndexingPageResponse indexingPageResponse) throws IOException {
         Pattern pattern1 = Pattern.compile(urlIndexingPage.getHost());
         Matcher coincidenceSiteOfConfigAndUrlIndexingPage = pattern1.matcher(site.getUrl());
+
         for (Page page : pagesWithPathIndexingPage) {
             if ((coincidenceSiteOfConfigAndUrlIndexingPage.find()) &&
                     (page.getPath().equals(urlIndexingPage.getPath()))
@@ -125,7 +123,7 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         Connection.Response code = Jsoup.connect(urlIndexingPage.toString()).execute();
         page.setCode(code.statusCode());
         Document document = Jsoup.connect(urlIndexingPage.toString()).get();
-        page.setContent(document.getAllElements().toString());
+        page.setContent("document.getAllElements().toString()");
         pageRepository.saveAndFlush(page);
         indexingUrlLemmaIndex(document, site, page);
     }

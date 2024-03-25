@@ -1,10 +1,9 @@
 indexing-settings:
   sites:
+    - url: https://dimonvideo.ru/
+      name: dimonvideo.ru
     - url: http://www.playback.ru/
       name: playback
-    - url: https://lenta.ru/
-      name: lenta.ru
-
 
 server:
   port: 8080

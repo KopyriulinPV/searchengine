@@ -6,7 +6,7 @@ import java.io.IOException;
 public interface SiteIndexingService {
     void siteIndexing() throws IOException, InterruptedException;
 
-    IndexingStartResponse indexingStartResponse() throws IOException, InterruptedException;
+    IndexingStartResponse indexingStart() throws IOException, InterruptedException;
 
-    IndexingStopResponse indexingStopResponse();
+    IndexingStopResponse indexingStop();
 }

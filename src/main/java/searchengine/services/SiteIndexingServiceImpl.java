@@ -1,6 +1,4 @@
 package searchengine.services;
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
@@ -18,36 +16,31 @@ import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 @Service
-@Setter
-@Getter
 public class SiteIndexingServiceImpl implements SiteIndexingService {
-    @Autowired
     private PageRepository pageRepository;
-    @Autowired
     private SiteRepository siteRepository;
-    @Autowired
     private LemmaRepository lemmaRepository;
-    @Autowired
     private IndexRepository indexRepository;
     private final SitesList sites;
     public static AtomicBoolean indexingIsGone;
-    private IndexingStartResponse indexingStartResponse;
-    private IndexingStopResponse indexingStopResponse;
     private LemmaFinder lemmaFinder;
     @Autowired
-    public SiteIndexingServiceImpl(SitesList sites, IndexingStartResponse indexingStartResponse,
-                                   IndexingStopResponse indexingStopResponse, LemmaFinder lemmaFinder,
-                                   AtomicBoolean indexingIsGone) {
+    public SiteIndexingServiceImpl(PageRepository pageRepository, SiteRepository siteRepository,
+                                   LemmaRepository lemmaRepository, IndexRepository indexRepository,
+                                   SitesList sites, LemmaFinder lemmaFinder, AtomicBoolean indexingIsGone) {
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
         this.sites = sites;
-        this.indexingStartResponse = indexingStartResponse;
-        this.indexingStopResponse = indexingStopResponse;
         this.lemmaFinder = lemmaFinder;
         this.indexingIsGone = indexingIsGone;
     }
     /**
      * ответ на запрос старт индексации
      */
-    public IndexingStartResponse indexingStartResponse() throws IOException, InterruptedException {
+    public IndexingStartResponse indexingStart() throws IOException, InterruptedException {
+        IndexingStartResponse indexingStartResponse = new IndexingStartResponse();
         if (indexingIsGone.getOpaque() == false) {
             for (searchengine.config.Site site : sites.getSites()) {
                 Iterable<searchengine.model.Site> iterable = siteRepository.findAll();
@@ -72,7 +65,8 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
     /**
      * ответ на запрос остановка индексации
      */
-    public IndexingStopResponse indexingStopResponse() {
+    public IndexingStopResponse indexingStop() {
+        IndexingStopResponse indexingStopResponse = new IndexingStopResponse();
         if (indexingIsGone.getOpaque() == false) {
             indexingStopResponse.setResult(false);
             indexingStopResponse.setError("Индексация не запущена");

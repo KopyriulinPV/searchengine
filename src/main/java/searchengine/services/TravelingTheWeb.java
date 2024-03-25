@@ -119,7 +119,7 @@ public class TravelingTheWeb extends RecursiveTask<String> {
 
         Document document1 = Jsoup.connect(nexUrl).get();
         Thread.sleep(1000);
-        pageEntity.setContent(document1.getAllElements().toString());
+        pageEntity.setContent("document1.getAllElements().toString()");
         pageRepository.saveAndFlush(pageEntity);
         String indexingStop = indexingLemmaIndex(nexUrl, pageEntity);
         if (indexingStop.matches("Индексация остановлена пользователем")) {

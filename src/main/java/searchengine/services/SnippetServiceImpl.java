@@ -1,14 +1,11 @@
 package searchengine.services;
-import lombok.Getter;
-import lombok.Setter;
 import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Setter
-@Getter
+
 @Service
 public class SnippetServiceImpl implements SnippetService {
     LemmaFinder lemmaFinder;

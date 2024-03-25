@@ -1,6 +1,4 @@
 package searchengine.services;
-import lombok.Getter;
-import lombok.Setter;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
@@ -18,23 +16,22 @@ import searchengine.repositories.SiteRepository;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-@Setter
-@Getter
+
 @Service
 public class SearchServicesImpl implements  SearchServices {
-    @Autowired
     private PageRepository pageRepository;
-    @Autowired
     private SiteRepository siteRepository;
-    @Autowired
     private LemmaRepository lemmaRepository;
-    @Autowired
     private IndexRepository indexRepository;
-    SearchResponse searchResponse;
     LemmaFinder lemmaFinder;
     @Autowired
-    public SearchServicesImpl(SearchResponse searchResponse, LemmaFinder lemmaFinder) {
-        this.searchResponse = searchResponse;
+    public SearchServicesImpl(PageRepository pageRepository, SiteRepository siteRepository,
+                              LemmaRepository lemmaRepository, IndexRepository indexRepository,
+                              LemmaFinder lemmaFinder) {
+        this.pageRepository = pageRepository;
+        this.siteRepository = siteRepository;
+        this.lemmaRepository = lemmaRepository;
+        this.indexRepository = indexRepository;
         this.lemmaFinder = lemmaFinder;
     }
     /**
@@ -85,6 +82,7 @@ public class SearchServicesImpl implements  SearchServices {
             dataItem.setRelevance(entry.getValue());
             listData.add(dataItem);
         }
+         SearchResponse searchResponse = new SearchResponse();
         if (listData.size() == 0) {
             searchResponse.setResult(false);
             searchResponse.setError("Задан пустой поисковый запрос");
