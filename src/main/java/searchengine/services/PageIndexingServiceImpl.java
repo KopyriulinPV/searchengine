@@ -123,7 +123,7 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         Connection.Response code = Jsoup.connect(urlIndexingPage.toString()).execute();
         page.setCode(code.statusCode());
         Document document = Jsoup.connect(urlIndexingPage.toString()).get();
-        page.setContent("document.getAllElements().toString()");
+        page.setContent(document.getAllElements().toString());
         pageRepository.saveAndFlush(page);
         indexingUrlLemmaIndex(document, site, page);
     }

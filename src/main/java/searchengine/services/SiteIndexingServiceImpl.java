@@ -94,7 +94,7 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
                 TravelingTheWeb action = new TravelingTheWeb(newSite, pageRepository,
                         siteRepository, site.getUrl(), lemmaRepository, indexRepository, lemmaFinder);
 
-                ForkJoinPool pool = new ForkJoinPool(4);
+                ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
                 String listPath = pool.invoke(action);
                 indexingCompletionMethod(pool, listPath, newSite);
             }).start();
@@ -113,9 +113,9 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
             }
         }
         if (listPath.matches("Индексация завершена")) {
-            System.out.println("Индексация завершена - это ошибка");
             newSite.setStatus(Status.INDEXED);
             siteRepository.saveAndFlush(newSite);
         }
     }
 }
+

@@ -5,7 +5,6 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 @Service
 public class SnippetServiceImpl implements SnippetService {
     LemmaFinder lemmaFinder;
@@ -16,11 +15,10 @@ public class SnippetServiceImpl implements SnippetService {
      * получаем сниппет
      */
     public String getSnippet(String query, String stringDocument) throws IOException {
-        List<String> listOfCorrectQueryWordForms = listOfCorrectQueryWordForms(query);
-        List<Integer> indexesLemma = indexesLemma(listOfCorrectQueryWordForms, stringDocument);
+        List<Integer> listIndexes = indexesQuery(query, stringDocument);
         List<String> snippetList = new ArrayList<>();
-        for (String word : listOfCorrectQueryWordForms) {
-            for (Integer index : indexesLemma) {
+
+            for (Integer index : listIndexes) {
                 String regex = "[//<&>\"\"]";
                 int indexEnd = 0;
                 for (int i = index; i < (index + 120); i++) {
@@ -50,18 +48,30 @@ public class SnippetServiceImpl implements SnippetService {
                         indexStart = j;
                     }
                 }
-                purgeText(indexStart, indexEnd, stringDocument, word, snippetList);
+                purgeText(indexStart, indexEnd, stringDocument, query, snippetList);
             }
-        }
         if (snippetList.size() == 0) {
             return null;
         }
         return snippetList.get(0);
     }
     /**
+     * получаем индексы первого символа слова, которое ищем
+     */
+    private List<Integer> indexesQuery(String query, String stringDocument)
+            throws IOException {
+        List<Integer> indexesQuery = new ArrayList<>();
+        int index = stringDocument.indexOf(query);
+            while (index != -1) {
+                indexesQuery.add(index);
+                index = stringDocument.indexOf(query, index + 1);
+        }
+        return indexesQuery;
+    }
+    /**
      * чистка текста, выделение жирным
      */
-    private String purgeText(int indexStart, int indexEnd, String stringDocument, String word,
+    private String purgeText(int indexStart, int indexEnd, String stringDocument, String words,
                              List<String> snippetList) {
         StringBuilder stringBuilder = new StringBuilder();
         for (int q = indexStart; q <= indexEnd; q++) {
@@ -70,7 +80,7 @@ public class SnippetServiceImpl implements SnippetService {
         }
         String snippet1 = stringBuilder.toString().trim();
         String snippet = snippet1.replaceAll("[//<&>\"\"\n]+", "");
-        String regex2 = word;
+        String regex2 = words;
         Pattern pattern = Pattern.compile(regex2);
         Matcher matcher = pattern.matcher(snippet);
         String finalSnippet = "";
@@ -86,31 +96,5 @@ public class SnippetServiceImpl implements SnippetService {
         Comparator<String> comparator = Comparator.comparing(obj -> obj.length());
         Collections.sort(snippetList, comparator.reversed());
         return null;
-    }
-    /**
-     * получаем слова из query с помощью леммизатора
-     */
-    private List<String> listOfCorrectQueryWordForms(String query) throws IOException {
-        List<String> listOfCorrectQueryWordForms = new ArrayList<>();
-        String[] words = query.split("\\s");
-        for (String w : words) {
-            Set<String> formationLemmaSet = lemmaFinder.getLemmaSet(w);
-            listOfCorrectQueryWordForms.add(formationLemmaSet.stream().toList().get(0));
-        }
-        return listOfCorrectQueryWordForms;
-    }
-    /**
-     * получаем индексы первого символа слова, которое ищем
-     */
-    private List<Integer> indexesLemma(List<String> listOfCorrectQueryWordForms, String stringDocument) throws IOException {
-        List<Integer> indexesLemma = new ArrayList<>();
-        for (String correctQueryWord : listOfCorrectQueryWordForms) {
-            int index = stringDocument.indexOf(correctQueryWord);
-            while (index != -1) {
-                indexesLemma.add(index);
-                index = stringDocument.indexOf(correctQueryWord, index + 1);
-            }
-        }
-        return indexesLemma;
     }
 }

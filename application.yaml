@@ -1,9 +1,9 @@
 indexing-settings:
   sites:
-    - url: https://dimonvideo.ru/
-      name: dimonvideo.ru
-    - url: http://www.playback.ru/
-      name: playback
+    - url: https://news.1777.ru
+      name: news.1777.ru
+
+
 
 server:
   port: 8080

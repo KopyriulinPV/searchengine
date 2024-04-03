@@ -1,7 +1,6 @@
 package searchengine.services;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.select.Elements;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.dto.search.SearchResponse;
@@ -49,56 +48,10 @@ public class SearchServicesImpl implements  SearchServices {
         return formationSearchResponse(sortedMapDescendingRelativeRelevance, query);
     }
     /**
-     * формируем SearchResponse
-     */
-     private SearchResponse formationSearchResponse(LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance,
-                                                    String query) {
-         List<searchengine.dto.search.FoundPageData> listData = new ArrayList<>();
-         for (Map.Entry<Page, Float> entry : sortedMapDescendingRelativeRelevance.entrySet()) {
-            searchengine.dto.search.FoundPageData dataItem = new searchengine.dto.search.FoundPageData();
-            dataItem.setSite(entry.getKey().getSite().getUrl());
-            dataItem.setSiteName(entry.getKey().getSite().getName());
-            dataItem.setUri(entry.getKey().getPath());
-            try {
-                Document document = Jsoup.connect(entry.getKey().getSite().getUrl() + entry.getKey().getPath()).get();
-                try {
-                    Thread.sleep(150);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                Elements elements = document.select("head > title");
-                dataItem.setTitle(elements.text());
-                String stringDocument = document.getAllElements().toString();
-                SnippetService snippetService = new SnippetServiceImpl(lemmaFinder);
-                String snippet = snippetService.getSnippet(query, stringDocument);
-                if (snippet == null) {
-                    continue;
-                }
-                dataItem.setSnippet(snippet);
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                continue;
-            }
-            dataItem.setRelevance(entry.getValue());
-            listData.add(dataItem);
-        }
-         SearchResponse searchResponse = new SearchResponse();
-        if (listData.size() == 0) {
-            searchResponse.setResult(false);
-            searchResponse.setError("Задан пустой поисковый запрос");
-        } else {
-            searchResponse.setResult(true);
-            searchResponse.setCount(listData.size());
-            searchResponse.setData(listData);
-        }
-        return searchResponse;
-    }
-    /**
      * Формируем Set String лемм
      */
     private Set<String> formationLemmaSet (String query) throws IOException {
-        Set<String> formationLemmaSet = lemmaFinder.getLemmaSet(query);
-        return formationLemmaSet;
+        return lemmaFinder.collectLemmas(query).keySet();
     }
     /**
      * получаем List<Lemma> отсортированных по возрастанию частоты встречаемости
@@ -106,28 +59,18 @@ public class SearchServicesImpl implements  SearchServices {
     private List<Lemma> listSortedAscendingLemmaFrequency (Set<String> formationLemmaSet, String site) {
         List<Lemma> lemmaList = new ArrayList<>();
         for (String lemmaString : formationLemmaSet) {
-            List<Lemma> temporaryLemmaList = new ArrayList<>();
             if (site == null) {
                 List<Lemma> qq = lemmaRepository.findByLemma(lemmaString);
                 for (Lemma lemma1 : qq) {
-                    temporaryLemmaList.add(lemma1);
-                }
-                Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
-                Collections.sort(temporaryLemmaList, comparator.reversed());
-                if (temporaryLemmaList.size() > 0) {
-                     lemmaList.add(temporaryLemmaList.get(0));
+                    lemmaList.add(lemma1);
                 }
             } else {
                 List<Site> sites = siteRepository.findAllContains(site);
                 Site modelSite = sites.get(0);
-                List<Lemma> qq = lemmaRepository.findAllContains(lemmaString, modelSite.getId());
+                List<Lemma> qq = lemmaRepository.findByLemma(lemmaString);
+                qq.stream().filter(r->r.getSite().equals(modelSite));
                 for (Lemma lemma1 : qq) {
-                    temporaryLemmaList.add(lemma1);
-                }
-                Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
-                Collections.sort(temporaryLemmaList, comparator.reversed());
-                if (temporaryLemmaList.size() > 0) {
-                    lemmaList.add(temporaryLemmaList.get(0));
+                    lemmaList.add(lemma1);
                 }
             }
         }
@@ -136,7 +79,7 @@ public class SearchServicesImpl implements  SearchServices {
         return lemmaList;
     }
     /**
-     * По первой, самой редкой лемме из списка, находить все страницы, на которых она встречается, получаем List<Page>
+     * Получаем List<Page> для одной леммы с наименьшим Frequency
      */
     private List<Page> listPageWithLowestFrequency(List<Lemma> listSortedAscendingLemmaFrequency) throws IOException {
         List<Page> listPage = new ArrayList<>();
@@ -153,8 +96,9 @@ public class SearchServicesImpl implements  SearchServices {
         return listPage;
     }
     /**
-     * Ищем соответствия следующей леммы из списка полученного из метода listPageWithLowestFrequency, а затем повторяем
-     * операцию по каждой следующей лемме.
+     * Ищем пересечения на одной Page для следующих лемм из списка полученного из метода listPageWithLowestFrequency.
+     * Получаем Set<Page>, в котором Page содержит все слова из query.
+     * Если нет Page со всеми словами из query, то returne выдаст пустой Set<Page>.
      */
     private Set<Page> listOfPagesFilteredByTheFollowingLemmas(List<Lemma> listSortedAscendingLemmaFrequency,
                                                               List<Page> listPageWithLowestFrequency) {
@@ -163,75 +107,104 @@ public class SearchServicesImpl implements  SearchServices {
             for (Page page : listPageWithLowestFrequency) {
                 setPage.add(page);
             }
+            return setPage;
         }
-               for (int i = 1; i < listSortedAscendingLemmaFrequency.size(); i++) {
-                for (Page page : listPageWithLowestFrequency) {
-                    Index index = indexRepository.findAllContains(listSortedAscendingLemmaFrequency.get(i).getId(), page.getId());
-                    if (!(index == null)) {
-                        setPage.add(index.getPage());
-                    }
+        for (Page page : listPageWithLowestFrequency) {
+            int q = 0;
+            for (int i = 0; i < listSortedAscendingLemmaFrequency.size(); i++) {
+                List<Index> index = indexRepository.findAllContains(listSortedAscendingLemmaFrequency.get(i).getId(), page.getId());
+                if (index.size() == 0) {
+                    break;
                 }
-                if (!(setPage.size() == 0)) {
-                listPageWithLowestFrequency.clear();
-
-                for (Page page : setPage) {
-                    listPageWithLowestFrequency.add(page);
-                  }
-                }
-                if (i < (listSortedAscendingLemmaFrequency.size() - 1)) {
-                    setPage.clear();
-                }
+                q++;
             }
-       return setPage;
-    }
-    /**
-     * получаем максимальную абсолютную релевантность
-     */
-    private int searchMaxRank(Set<Page> setPage) {
-    List<Integer> searchMaxRank = new ArrayList<>();
-        for (Page page : setPage) {
-        int qq = 0;
-        List<Index> indexes = indexRepository.findByPage_id(page.getId());
-        for (Index index : indexes) {
-            qq += index.getLemma_rank();
+            if (q == listSortedAscendingLemmaFrequency.size()) {
+                setPage.add(page);
+            }
         }
-        searchMaxRank.add(qq);
-    }
-    Iterator<Integer> iterator = searchMaxRank.stream().iterator();
-    int maxRank = 0;
-        while (iterator.hasNext()) {
-        Integer next = iterator.next();
-        if (maxRank <= next) {
-            maxRank = next;
-        }
-    }
-        return maxRank;
+        return setPage;
     }
     /**
      * сортирует страницы по убыванию релевантности
      */
     private LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance(Set<Page> setPage) {
-
-    Map<Page, Float> rankAmountsForEachPage = new HashMap<>();
+        Map<Page, Float> rankAmountsForEachPage = new HashMap<>();
         for (Page page : setPage) {
-        float qq = 0f;
-        List<Index> indexes = indexRepository.findByPage_id(page.getId());
-        for (Index index : indexes) {
-            qq += index.getLemma_rank();
+            float qq = 0f;
+            List<Index> indexes = indexRepository.findByPage_id(page.getId());
+            for (Index index : indexes) {
+                qq += index.getLemma_rank();
+            }
+            float rr = qq/searchMaxRank(setPage);
+            rankAmountsForEachPage.put(page, rr);
         }
-        float rr = qq/searchMaxRank(setPage);
-        rankAmountsForEachPage.put(page, rr);
-    }
-    LinkedHashMap<Page, Float> sortedMap = rankAmountsForEachPage.entrySet()
-            .stream()
-            .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
-            .collect(Collectors
-                    .toMap(Map.Entry::getKey,
-                            Map.Entry::getValue,
-                            (e1, e2) -> e1,
-                            LinkedHashMap::new));
-
+        LinkedHashMap<Page, Float> sortedMap = rankAmountsForEachPage.entrySet()
+                .stream()
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors
+                        .toMap(Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (e1, e2) -> e1,
+                                LinkedHashMap::new));
         return sortedMap;
+    }
+    /**
+     * получаем максимальную абсолютную релевантность
+     */
+    private int searchMaxRank(Set<Page> setPage) {
+        List<Integer> searchMaxRank = new ArrayList<>();
+        for (Page page : setPage) {
+            int qq = 0;
+            List<Index> indexes = indexRepository.findByPage_id(page.getId());
+            for (Index index : indexes) {
+                qq += index.getLemma_rank();
+            }
+            searchMaxRank.add(qq);
+        }
+        Iterator<Integer> iterator = searchMaxRank.stream().iterator();
+        int maxRank = 0;
+        while (iterator.hasNext()) {
+            Integer next = iterator.next();
+            if (maxRank <= next) {
+                maxRank = next;
+            }
+        }
+        return maxRank;
+    }
+    /**
+     * формируем SearchResponse
+     */
+    private SearchResponse formationSearchResponse(LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance,
+                                                   String query) throws IOException {
+        List<searchengine.dto.search.FoundPageData> listData = new ArrayList<>();
+        for (Map.Entry<Page, Float> entry : sortedMapDescendingRelativeRelevance.entrySet()) {
+            searchengine.dto.search.FoundPageData dataItem = new searchengine.dto.search.FoundPageData();
+            dataItem.setSite(entry.getKey().getSite().getUrl());
+            dataItem.setSiteName(entry.getKey().getSite().getName());
+            dataItem.setUri(entry.getKey().getPath());
+            String stringContent = entry.getKey().getContent();
+            Document html = Jsoup.parse(stringContent);
+            String title = html.title();
+            dataItem.setTitle(title);
+            SnippetService snippetService = new SnippetServiceImpl(lemmaFinder);
+            String snippet = snippetService.getSnippet(query, stringContent);
+            if (snippet == null) {
+                continue;
+            }
+            dataItem.setSnippet(snippet);
+            dataItem.setRelevance(entry.getValue());
+            listData.add(dataItem);
+        }
+        SearchResponse searchResponse = new SearchResponse();
+        if (listData.size() == 0) {
+            searchResponse.setResult(false);
+            searchResponse.setError("Задан пустой поисковый запрос");
+        } else {
+            searchResponse.setResult(true);
+            searchResponse.setCount(listData.size());
+            searchResponse.setData(listData);
+        }
+        return searchResponse;
     }
 }
 
