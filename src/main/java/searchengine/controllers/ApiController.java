@@ -35,17 +35,17 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public IndexingStartResponse startIndexing() throws IOException, InterruptedException {
-        return siteIndexingService.indexingStart();
+        return siteIndexingService.startOfIndexing();
     }
 
     @GetMapping("/stopIndexing")
     public IndexingStopResponse stopIndexing() {
-        return siteIndexingService.indexingStop();
+        return siteIndexingService.stopIndexing();
     }
 
     @PostMapping("/indexPage")
     public IndexingPageResponse indexPage(@RequestBody String url) throws IOException, InterruptedException {
-        return pageIndexingService.pageIndexing(url);
+        return pageIndexingService.indexPage(url);
     }
 
     @GetMapping("/search")

@@ -1,4 +1,5 @@
 package searchengine.services;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.config.SitesList;
@@ -10,11 +11,13 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 @Service
 public class SiteIndexingServiceImpl implements SiteIndexingService {
     private PageRepository pageRepository;
@@ -24,6 +27,7 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
     private final SitesList sites;
     public static AtomicBoolean indexingIsGone;
     private LemmaFinder lemmaFinder;
+
     @Autowired
     public SiteIndexingServiceImpl(PageRepository pageRepository, SiteRepository siteRepository,
                                    LemmaRepository lemmaRepository, IndexRepository indexRepository,
@@ -36,36 +40,38 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
         this.lemmaFinder = lemmaFinder;
         this.indexingIsGone = indexingIsGone;
     }
-    /**
-     * ответ на запрос старт индексации
-     */
-    public IndexingStartResponse indexingStart() throws IOException, InterruptedException {
+
+    public IndexingStartResponse startOfIndexing() throws IOException, InterruptedException {
         IndexingStartResponse indexingStartResponse = new IndexingStartResponse();
         if (indexingIsGone.getOpaque() == false) {
             for (searchengine.config.Site site : sites.getSites()) {
                 Iterable<searchengine.model.Site> iterable = siteRepository.findAll();
                 Iterator<searchengine.model.Site> siteIterator = iterable.iterator();
-                while (siteIterator.hasNext()) {
-                    searchengine.model.Site iteratorNext = siteIterator.next();
-                    if (iteratorNext.getUrl().contains(site.getUrl())) {
-                        siteRepository.delete(iteratorNext);
-                    }
-                }
+                deleteSitesFromTheDatabase(siteIterator, site);
             }
+
             indexingIsGone.set(true);
             TravelingTheWeb.indexingStop = false;
             indexingStartResponse.setResult(true);
-            siteIndexing();
+            indexSites();
         } else {
             indexingStartResponse.setResult(false);
             indexingStartResponse.setError("Индексация уже запущена");
         }
         return indexingStartResponse;
     }
-    /**
-     * ответ на запрос остановка индексации
-     */
-    public IndexingStopResponse indexingStop() {
+
+    private void deleteSitesFromTheDatabase(Iterator<searchengine.model.Site> siteIterator,
+                                            searchengine.config.Site site) {
+        while (siteIterator.hasNext()) {
+            searchengine.model.Site iteratorNext = siteIterator.next();
+            if (iteratorNext.getUrl().contains(site.getUrl())) {
+                siteRepository.delete(iteratorNext);
+            }
+        }
+    }
+
+    public IndexingStopResponse stopIndexing() {
         IndexingStopResponse indexingStopResponse = new IndexingStopResponse();
         if (indexingIsGone.getOpaque() == false) {
             indexingStopResponse.setResult(false);
@@ -77,13 +83,11 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
         }
         return indexingStopResponse;
     }
-    /**
-     * запуск алгоритма индексации, запуск ForkJoinPool по обходу сайта
-     */
-    public void siteIndexing()
+
+    public void indexSites()
             throws IOException, InterruptedException {
         for (searchengine.config.Site site : sites.getSites()) {
-            new Thread(()-> {
+            new Thread(() -> {
                 Site newSite = new Site();
                 newSite.setName(site.getName());
                 newSite.setUrl(site.getUrl());
@@ -96,14 +100,12 @@ public class SiteIndexingServiceImpl implements SiteIndexingService {
 
                 ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
                 String listPath = pool.invoke(action);
-                indexingCompletionMethod(pool, listPath, newSite);
+                completeIndexing(pool, listPath, newSite);
             }).start();
         }
     }
-    /**
-     * метод завершения индексации
-     */
-    private void indexingCompletionMethod(ForkJoinPool pool, String listPath, Site newSite) {
+
+    private void completeIndexing(ForkJoinPool pool, String listPath, Site newSite) {
         if (listPath.matches("Индексация остановлена пользователем")) {
             pool.shutdown();
             if (!(newSite.getStatus().compareTo(Status.INDEXED) == 0)) {

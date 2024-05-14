@@ -1,5 +1,7 @@
 package searchengine.services;
+
 import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -8,66 +10,79 @@ import java.util.regex.Pattern;
 @Service
 public class SnippetServiceImpl implements SnippetService {
     LemmaFinder lemmaFinder;
+
     public SnippetServiceImpl(LemmaFinder lemmaFinder) {
         this.lemmaFinder = lemmaFinder;
     }
+
     /**
      * получаем сниппет
      */
     public String getSnippet(String query, String stringDocument) throws IOException {
-        List<Integer> listIndexes = indexesQuery(query, stringDocument);
+        List<Integer> listIndexes = getTheIndexesOfTheFirstCharacterOfTheWord(query, stringDocument);
         List<String> snippetList = new ArrayList<>();
-
-            for (Integer index : listIndexes) {
-                String regex = "[//<&>\"\"]";
-                int indexEnd = 0;
-                for (int i = index; i < (index + 120); i++) {
-                    Character tt = stringDocument.charAt(i);
-                    String ww = tt.toString();
-                    Pattern pattern = Pattern.compile(regex);
-                    Matcher matcher = pattern.matcher(ww);
-                    if (matcher.find()) {
-                        indexEnd = i;
-                        break;
-                    }
-                    if (i == (index + 119)) {
-                        indexEnd = i;
-                    }
-                }
-                int indexStart = 0;
-                for (int j = index; j > (index - 120); --j) {
-                    Character tt = stringDocument.charAt(j);
-                    String ww = tt.toString();
-                    Pattern pattern = Pattern.compile(regex);
-                    Matcher matcher = pattern.matcher(ww);
-                    if (matcher.find()) {
-                        indexStart = j;
-                        break;
-                    }
-                    if (j == (index - 119)) {
-                        indexStart = j;
-                    }
-                }
-                purgeText(indexStart, indexEnd, stringDocument, query, snippetList);
-            }
+        String regex = "[//<&>\"\"]";
+        for (Integer index : listIndexes) {
+            int indexEnd = getIndexEnd(index, stringDocument, regex);
+            int indexStart = getIndexStart(index, stringDocument, regex);
+            purgeText(indexStart, indexEnd, stringDocument, query, snippetList);
+        }
         if (snippetList.size() == 0) {
             return null;
         }
-        return snippetList.get(0);
+        return getTheLargestSnippet(snippetList);
     }
+
+    private int getIndexEnd(Integer index, String stringDocument, String regex) {
+        int indexEnd = 0;
+        for (int i = index; i < (index + 120); i++) {
+            Character tt = stringDocument.charAt(i);
+            String ww = tt.toString();
+            Pattern pattern = Pattern.compile(regex);
+            Matcher matcher = pattern.matcher(ww);
+            if (matcher.find()) {
+                indexEnd = i;
+                break;
+            }
+            if (i == (index + 119)) {
+                indexEnd = i;
+            }
+        }
+        return indexEnd;
+    }
+
+    private int getIndexStart(Integer index, String stringDocument, String regex) {
+        int indexStart = 0;
+        for (int j = index; j > (index - 120); --j) {
+            Character tt = stringDocument.charAt(j);
+            String ww = tt.toString();
+            Pattern pattern = Pattern.compile(regex);
+            Matcher matcher = pattern.matcher(ww);
+            if (matcher.find()) {
+                indexStart = j;
+                break;
+            }
+            if (j == (index - 119)) {
+                indexStart = j;
+            }
+        }
+        return indexStart;
+    }
+
     /**
      * получаем индексы первого символа слова, которое ищем
      */
-    private List<Integer> indexesQuery(String query, String stringDocument)
+    private List<Integer> getTheIndexesOfTheFirstCharacterOfTheWord(String query, String stringDocument)
             throws IOException {
         List<Integer> indexesQuery = new ArrayList<>();
         int index = stringDocument.indexOf(query);
-            while (index != -1) {
-                indexesQuery.add(index);
-                index = stringDocument.indexOf(query, index + 1);
+        while (index != -1) {
+            indexesQuery.add(index);
+            index = stringDocument.indexOf(query, index + 1);
         }
         return indexesQuery;
     }
+
     /**
      * чистка текста, выделение жирным
      */
@@ -96,5 +111,11 @@ public class SnippetServiceImpl implements SnippetService {
         Comparator<String> comparator = Comparator.comparing(obj -> obj.length());
         Collections.sort(snippetList, comparator.reversed());
         return null;
+    }
+
+    private String getTheLargestSnippet(List<String> snippetList) {
+        Comparator<String> comparator = Comparator.comparing(obj -> obj.length());
+        Collections.sort(snippetList, comparator.reversed());
+        return snippetList.get(0);
     }
 }

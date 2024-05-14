@@ -1,4 +1,5 @@
 package searchengine.services;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import searchengine.dto.statistics.DetailedStatisticsItem;
@@ -12,6 +13,7 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -35,9 +37,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         this.lemmaRepository = lemmaRepository;
         this.indexRepository = indexRepository;
     }
-    /**
-     * запуск формирования данных по статистике
-     */
+
     @Override
     public StatisticsResponse getStatistics() throws SQLException {
         List<searchengine.model.Site> sitesList = siteRepository.findAll();
@@ -60,16 +60,14 @@ public class StatisticsServiceImpl implements StatisticsService {
             long date = zdt.toInstant().toEpochMilli();
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
-            detailed.add(formationDetailedStatisticsItem(site.getUrl(), site.getName(), site.getStatus().toString(),
+            detailed.add(fillDetailedStatisticsItem(site.getUrl(), site.getName(), site.getStatus().toString(),
                     date, site.getLast_error(), pages, lemmas));
         }
-        return formationStatisticsResponse(total, detailed);
+        return fillStatisticsResponse(total, detailed);
     }
-    /**
-     * заполнение объекта DetailedStatisticsItem
-     */
-     private DetailedStatisticsItem formationDetailedStatisticsItem(String url, String name, String status,
-                                                                   long statusTime, String error, int pages, int lemmas) {
+
+    private DetailedStatisticsItem fillDetailedStatisticsItem(String url, String name, String status,
+                                                              long statusTime, String error, int pages, int lemmas) {
         DetailedStatisticsItem item = new DetailedStatisticsItem();
         item.setUrl(url);
         item.setName(name);
@@ -80,11 +78,9 @@ public class StatisticsServiceImpl implements StatisticsService {
         item.setLemmas(lemmas);
         return item;
     }
-     /**
-     * заполнение объекта StatisticsResponse
-     */
-     private StatisticsResponse formationStatisticsResponse(TotalStatistics total,
-                                                            List<DetailedStatisticsItem> detailed) {
+
+    private StatisticsResponse fillStatisticsResponse(TotalStatistics total,
+                                                      List<DetailedStatisticsItem> detailed) {
         StatisticsData data = new StatisticsData();
         data.setTotal(total);
         data.setDetailed(detailed);

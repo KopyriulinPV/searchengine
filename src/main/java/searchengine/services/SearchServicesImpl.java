@@ -1,4 +1,5 @@
 package searchengine.services;
+
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,17 +13,19 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-public class SearchServicesImpl implements  SearchServices {
+public class SearchServicesImpl implements SearchServices {
     private PageRepository pageRepository;
     private SiteRepository siteRepository;
     private LemmaRepository lemmaRepository;
     private IndexRepository indexRepository;
     LemmaFinder lemmaFinder;
+
     @Autowired
     public SearchServicesImpl(PageRepository pageRepository, SiteRepository siteRepository,
                               LemmaRepository lemmaRepository, IndexRepository indexRepository,
@@ -33,111 +36,139 @@ public class SearchServicesImpl implements  SearchServices {
         this.indexRepository = indexRepository;
         this.lemmaFinder = lemmaFinder;
     }
-    /**
-     * запускаем поиск
-     */
+
     @Override
     public SearchResponse getSearch(String query, String offset,
                                     String limit, String site) throws IOException {
-        Set<String> formationLemmaSet = formationLemmaSet(query);
-        List<Lemma> listSortedAscendingLemmaFrequency = listSortedAscendingLemmaFrequency(formationLemmaSet, site);
-        List<Page> listPageWithLowestFrequency = listPageWithLowestFrequency(listSortedAscendingLemmaFrequency);
-        Set<Page> listOfPagesFilteredByTheFollowingLemmas = listOfPagesFilteredByTheFollowingLemmas(listSortedAscendingLemmaFrequency,
-                listPageWithLowestFrequency);
-        LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance = sortedMapDescendingRelativeRelevance(listOfPagesFilteredByTheFollowingLemmas);
-        return formationSearchResponse(sortedMapDescendingRelativeRelevance, query);
+        Set<String> lemmaSet = createLemmaSet(query);
+        List<Lemma> listInAscendingFrequency = sortListInAscendingFrequency(lemmaSet, site);
+        List<Page> listForTheLowestFrequencyLemma = createListForTheLowestFrequencyLemma(listInAscendingFrequency, query);
+        Set<Page> listOfPagesFilteredByTheFollowingLemmas = createListOfPagesFilteredByTheFollowingLemmas(listInAscendingFrequency,
+                listForTheLowestFrequencyLemma, query);
+        LinkedHashMap<Page, Float> mapDescendingRelativeRelevance = sortMapDescendingRelativeRelevance(listOfPagesFilteredByTheFollowingLemmas);
+        return createSearchResponse(mapDescendingRelativeRelevance, query, limit, offset);
     }
-    /**
-     * Формируем Set String лемм
-     */
-    private Set<String> formationLemmaSet (String query) throws IOException {
+
+    private Set<String> createLemmaSet(String query) throws IOException {
         return lemmaFinder.collectLemmas(query).keySet();
     }
-    /**
-     * получаем List<Lemma> отсортированных по возрастанию частоты встречаемости
-     */
-    private List<Lemma> listSortedAscendingLemmaFrequency (Set<String> formationLemmaSet, String site) {
+
+    private List<Lemma> sortListInAscendingFrequency(Set<String> lemmaSet, String site) {
         List<Lemma> lemmaList = new ArrayList<>();
-        for (String lemmaString : formationLemmaSet) {
+        for (String lemmaString : lemmaSet) {
             if (site == null) {
-                List<Lemma> qq = lemmaRepository.findByLemma(lemmaString);
-                for (Lemma lemma1 : qq) {
-                    lemmaList.add(lemma1);
-                }
+                List<Lemma> lemmaList1 = lemmaRepository.findByLemma(lemmaString);
+                addLemmaToLemmaList(lemmaList1, lemmaList);
             } else {
                 List<Site> sites = siteRepository.findAllContains(site);
                 Site modelSite = sites.get(0);
                 List<Lemma> qq = lemmaRepository.findByLemma(lemmaString);
-                qq.stream().filter(r->r.getSite().equals(modelSite));
-                for (Lemma lemma1 : qq) {
-                    lemmaList.add(lemma1);
-                }
+                List<Lemma> lemmaList1 = qq.stream().filter(r -> r.getSite().equals(modelSite)).toList();
+                addLemmaToLemmaList(lemmaList1, lemmaList);
             }
         }
         Comparator<Lemma> comparator = Comparator.comparing(obj -> obj.getFrequency());
         Collections.sort(lemmaList, comparator);
         return lemmaList;
     }
-    /**
-     * Получаем List<Page> для одной леммы с наименьшим Frequency
-     */
-    private List<Page> listPageWithLowestFrequency(List<Lemma> listSortedAscendingLemmaFrequency) throws IOException {
+
+    private void addLemmaToLemmaList(List<Lemma> lemmaList1, List<Lemma> lemmaList) {
+        for (Lemma lemma1 : lemmaList1) {
+            lemmaList.add(lemma1);
+        }
+    }
+
+    private List<Page> createListForTheLowestFrequencyLemma(List<Lemma> listInAscendingFrequency,
+                                                            String query) throws IOException {
         List<Page> listPage = new ArrayList<>();
         List<Index> listIndex = new ArrayList<>();
-        if (listSortedAscendingLemmaFrequency.size() > 0) {
-            listIndex = indexRepository.findByLemma_id(listSortedAscendingLemmaFrequency.get(0).getId());
+        if (getCountWordsQuery(query) == 1 && listInAscendingFrequency.size() > 0) {
+            for (Lemma lemma : listInAscendingFrequency) {
+                List<Index> listIndex1 = indexRepository.findByLemma_id(lemma.getId());
+                addPageOnList(listIndex1, listPage);
+            }
+            return listPage;
         }
+
+        if (listInAscendingFrequency.size() > 0) {
+            List<Lemma> newLemmaList = new ArrayList<>();
+            listInAscendingFrequency.stream().
+                    filter(q -> q.getLemma().equals(listInAscendingFrequency.get(0).getLemma())).forEach(q -> newLemmaList.add(q));
+            newLemmaList.forEach(q -> listIndex.addAll(indexRepository.findByLemma_id(q.getId())));
+        }
+        addPageOnList(listIndex, listPage);
+        return listPage;
+    }
+
+    private void addPageOnList(List<Index> listIndex, List<Page> listPage) {
         for (Index index : listIndex) {
             Optional<Page> pageOptional = pageRepository.findById(index.getPage().getId());
             if (!(pageOptional == null)) {
                 listPage.add(pageOptional.get());
             }
         }
-        return listPage;
     }
+
+    private int getCountWordsQuery(String query) throws IOException {
+        String[] countWords = query.split(" ");
+        return countWords.length;
+    }
+
     /**
-     * Ищем пересечения на одной Page для следующих лемм из списка полученного из метода listPageWithLowestFrequency.
+     * Ищем пересечения на одной Page для следующих лемм из списка полученного из метода createListForTheLowestFrequencyLemma.
      * Получаем Set<Page>, в котором Page содержит все слова из query.
      * Если нет Page со всеми словами из query, то returne выдаст пустой Set<Page>.
      */
-    private Set<Page> listOfPagesFilteredByTheFollowingLemmas(List<Lemma> listSortedAscendingLemmaFrequency,
-                                                              List<Page> listPageWithLowestFrequency) {
+    private Set<Page> createListOfPagesFilteredByTheFollowingLemmas(List<Lemma> listInAscendingFrequency,
+                                                                    List<Page> listForTheLowestFrequencyLemma,
+                                                                    String query) throws IOException {
         Set<Page> setPage = new HashSet<>();
-        if (listSortedAscendingLemmaFrequency.size() == 1) {
-            for (Page page : listPageWithLowestFrequency) {
+        if (getCountWordsQuery(query) == 1) {
+            for (Page page : listForTheLowestFrequencyLemma) {
                 setPage.add(page);
             }
             return setPage;
         }
-        for (Page page : listPageWithLowestFrequency) {
-            int q = 0;
-            for (int i = 0; i < listSortedAscendingLemmaFrequency.size(); i++) {
-                List<Index> index = indexRepository.findAllContains(listSortedAscendingLemmaFrequency.get(i).getId(), page.getId());
-                if (index.size() == 0) {
-                    break;
-                }
-                q++;
-            }
-            if (q == listSortedAscendingLemmaFrequency.size()) {
+        for (Page page : listForTheLowestFrequencyLemma) {
+            List<Lemma> lemmas = new ArrayList<>();
+            listInAscendingFrequency.stream().
+                    filter(q -> q.getSite().equals(page.getSite())).
+                    forEach(q -> lemmas.add(q));
+            int q = addPageOnList(lemmas, page);
+            if (q == lemmas.size()) {
                 setPage.add(page);
             }
         }
         return setPage;
     }
-    /**
-     * сортирует страницы по убыванию релевантности
-     */
-    private LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance(Set<Page> setPage) {
+
+    private int addPageOnList(List<Lemma> lemmas, Page page) {
+        int q = 0;
+        for (Lemma lemma : lemmas) {
+            List<Index> indexList = lemma.getIndexes();
+            for (Index index : indexList) {
+                if (index.getPage().equals(page)) {
+                    q++;
+                    break;
+                }
+            }
+        }
+        return q;
+    }
+
+    private LinkedHashMap<Page, Float> sortMapDescendingRelativeRelevance(Set<Page> setPage) {
         Map<Page, Float> rankAmountsForEachPage = new HashMap<>();
+        List<Index> allIndex = indexRepository.findAll();
         for (Page page : setPage) {
             float qq = 0f;
-            List<Index> indexes = indexRepository.findByPage_id(page.getId());
+            List<Index> indexes = allIndex.stream().filter(q -> q.getPage().equals(page)).toList();
             for (Index index : indexes) {
                 qq += index.getLemma_rank();
             }
-            float rr = qq/searchMaxRank(setPage);
+            float rr = qq / searchMaxRank(setPage);
             rankAmountsForEachPage.put(page, rr);
         }
+
         LinkedHashMap<Page, Float> sortedMap = rankAmountsForEachPage.entrySet()
                 .stream()
                 .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
@@ -148,9 +179,7 @@ public class SearchServicesImpl implements  SearchServices {
                                 LinkedHashMap::new));
         return sortedMap;
     }
-    /**
-     * получаем максимальную абсолютную релевантность
-     */
+
     private int searchMaxRank(Set<Page> setPage) {
         List<Integer> searchMaxRank = new ArrayList<>();
         for (Page page : setPage) {
@@ -171,13 +200,16 @@ public class SearchServicesImpl implements  SearchServices {
         }
         return maxRank;
     }
-    /**
-     * формируем SearchResponse
-     */
-    private SearchResponse formationSearchResponse(LinkedHashMap<Page, Float> sortedMapDescendingRelativeRelevance,
-                                                   String query) throws IOException {
+
+    private SearchResponse createSearchResponse(LinkedHashMap<Page, Float> sortMapDescendingRelativeRelevance,
+                                                String query, String limit, String offset) throws IOException {
+        int offset1 = Integer.parseInt(offset);
+        int limit1 = Integer.parseInt(limit);
         List<searchengine.dto.search.FoundPageData> listData = new ArrayList<>();
-        for (Map.Entry<Page, Float> entry : sortedMapDescendingRelativeRelevance.entrySet()) {
+        List<searchengine.dto.search.FoundPageData[]> listData2 = new ArrayList<>();
+        List<List<searchengine.dto.search.FoundPageData>> listData3 = new ArrayList<>();
+
+        for (Map.Entry<Page, Float> entry : sortMapDescendingRelativeRelevance.entrySet()) {
             searchengine.dto.search.FoundPageData dataItem = new searchengine.dto.search.FoundPageData();
             dataItem.setSite(entry.getKey().getSite().getUrl());
             dataItem.setSiteName(entry.getKey().getSite().getName());
@@ -195,6 +227,14 @@ public class SearchServicesImpl implements  SearchServices {
             dataItem.setRelevance(entry.getValue());
             listData.add(dataItem);
         }
+        List<searchengine.dto.search.FoundPageData> listDataInResponse = new ArrayList<>();
+        int startIndex = offset1;
+        int finalIndex = (startIndex + limit1) - 1;
+        for (int i = 0; i < listData.size(); i++) {
+            if ((startIndex <= i) && (i <= finalIndex)) {
+                listDataInResponse.add(listData.get(i));
+            }
+        }
         SearchResponse searchResponse = new SearchResponse();
         if (listData.size() == 0) {
             searchResponse.setResult(false);
@@ -202,7 +242,7 @@ public class SearchServicesImpl implements  SearchServices {
         } else {
             searchResponse.setResult(true);
             searchResponse.setCount(listData.size());
-            searchResponse.setData(listData);
+            searchResponse.setData(listDataInResponse);
         }
         return searchResponse;
     }

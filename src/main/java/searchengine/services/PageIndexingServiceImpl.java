@@ -27,6 +27,7 @@ public class PageIndexingServiceImpl implements PageIndexingService {
     private IndexRepository indexRepository;
     private final SitesList sites;
     private LemmaFinder lemmaFinder;
+
     @Autowired
     public PageIndexingServiceImpl(PageRepository pageRepository, SiteRepository siteRepository,
                                    LemmaRepository lemmaRepository, IndexRepository indexRepository,
@@ -38,15 +39,13 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         this.sites = sites;
         this.lemmaFinder = lemmaFinder;
     }
-    /**
-     * запускаем индексацию page
-     */
-    public IndexingPageResponse pageIndexing(String url) throws IOException, InterruptedException {
-        URL urlIndexingPage = normalURLForm(url);
+
+    public IndexingPageResponse indexPage(String url) throws IOException, InterruptedException {
+        URL urlIndexingPage = createNormalURLForm(url);
         List<Page> pagesWithPathIndexingPage = pageRepository.findByPath(urlIndexingPage.getPath());
         for (searchengine.config.Site site : sites.getSites()) {
             IndexingPageResponse indexingPageResponse = new IndexingPageResponse();
-            successfulResponseToPageIndexing(urlIndexingPage, pagesWithPathIndexingPage, site, indexingPageResponse);
+            createResponseToPageIndexing(urlIndexingPage, pagesWithPathIndexingPage, site, indexingPageResponse);
             if (indexingPageResponse.isResult()) {
                 return indexingPageResponse;
             }
@@ -55,11 +54,9 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         indexingPageResponse2.setError("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
         return indexingPageResponse2;
     }
-    /**
-     * формируем indexingPageResponse
-     */
-    private void successfulResponseToPageIndexing(URL urlIndexingPage, List<Page> pagesWithPathIndexingPage,
-    searchengine.config.Site site, IndexingPageResponse indexingPageResponse) throws IOException {
+
+    private void createResponseToPageIndexing(URL urlIndexingPage, List<Page> pagesWithPathIndexingPage,
+                                              searchengine.config.Site site, IndexingPageResponse indexingPageResponse) throws IOException {
         Pattern pattern1 = Pattern.compile(urlIndexingPage.getHost());
         Matcher coincidenceSiteOfConfigAndUrlIndexingPage = pattern1.matcher(site.getUrl());
 
@@ -68,33 +65,35 @@ public class PageIndexingServiceImpl implements PageIndexingService {
                     (page.getPath().equals(urlIndexingPage.getPath()))
                     && (page.getSite().getUrl().contains(urlIndexingPage.getHost()))) {
                 List<Index> indexes = indexRepository.findByPage_id(page.getId());
-                for (Index index : indexes) {
-                    Lemma lemmaNew = lemmaRepository.findById(index.getLemma().getId()).get();
-                    lemmaNew.setFrequency(lemmaNew.getFrequency() - 1);
-                    lemmaRepository.saveAndFlush(lemmaNew);
-                }
+                saveLemma(indexes);
                 pageRepository.delete(page);
-                indexingUrlSitePage(urlIndexingPage, site);
+                saveSitePage(urlIndexingPage, site);
                 indexingPageResponse.setResult(true);
             }
         }
         if ((coincidenceSiteOfConfigAndUrlIndexingPage.find()) && (pagesWithPathIndexingPage.size() == 0)) {
-            indexingUrlSitePage(urlIndexingPage, site);
+            saveSitePage(urlIndexingPage, site);
             indexingPageResponse.setResult(true);
         }
         for (Page page : pagesWithPathIndexingPage) {
             if ((coincidenceSiteOfConfigAndUrlIndexingPage.find()) &&
                     (page.getPath().equals(urlIndexingPage.getPath()))
                     && !(page.getSite().getUrl().contains(urlIndexingPage.getHost()))) {
-                indexingUrlSitePage(urlIndexingPage, site);
+                saveSitePage(urlIndexingPage, site);
                 indexingPageResponse.setResult(true);
             }
         }
     }
-    /**
-     * преобразуем URL в правильные символы
-     */
-    private URL normalURLForm(String url) throws MalformedURLException {
+
+    private void saveLemma(List<Index> indexes) {
+        for (Index index : indexes) {
+            Lemma lemmaNew = lemmaRepository.findById(index.getLemma().getId()).get();
+            lemmaNew.setFrequency(lemmaNew.getFrequency() - 1);
+            lemmaRepository.saveAndFlush(lemmaNew);
+        }
+    }
+
+    private URL createNormalURLForm(String url) throws MalformedURLException {
         String regex = "url=";
         String regex1 = "%3A%2F%2F";
         String regex2 = "%2F";
@@ -102,10 +101,8 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         URL urlUrl = new URL(stringUrl);
         return urlUrl;
     }
-    /**
-     * сохраняем в БД сущность site и page
-     */
-    private void indexingUrlSitePage(URL urlIndexingPage, searchengine.config.Site siteConfig) throws IOException {
+
+    private void saveSitePage(URL urlIndexingPage, searchengine.config.Site siteConfig) throws IOException {
         List<Site> sitesBeforeRecording = siteRepository.findAllContains(urlIndexingPage.getHost());
         if (sitesBeforeRecording.size() == 0) {
             Site site2 = new Site();
@@ -125,12 +122,10 @@ public class PageIndexingServiceImpl implements PageIndexingService {
         Document document = Jsoup.connect(urlIndexingPage.toString()).get();
         page.setContent(document.getAllElements().toString());
         pageRepository.saveAndFlush(page);
-        indexingUrlLemmaIndex(document, site, page);
+        saveLemmaIndex(document, site, page);
     }
-    /**
-     * сохраняем в БД сущность lemma и index
-     */
-    private void indexingUrlLemmaIndex(Document document, Site site, Page page) throws IOException {
+
+    private void saveLemmaIndex(Document document, Site site, Page page) {
         Map<String, Integer> lemmaFinderMap = lemmaFinder.collectLemmas(document.
                 getAllElements().toString());
         for (Map.Entry<String, Integer> entry : lemmaFinderMap.entrySet()) {
@@ -141,11 +136,7 @@ public class PageIndexingServiceImpl implements PageIndexingService {
             lemma.setFrequency(1);
             List<Lemma> lemmaList = lemmaRepository.findAllContains(lemmaString, site.getId());
             List<Lemma> lemmaList1 = new ArrayList<>();
-            for (Lemma lemma1 : lemmaList) {
-                if (lemma1.getLemma().equals(lemmaString)) {
-                    lemmaList1.add(lemma1);
-                }
-            }
+            addLemmaInLemmaList(lemmaList, lemmaList1, lemmaString);
             if (lemmaList.size() == 0) {
                 lemmaRepository.saveAndFlush(lemma);
                 Index index = new Index();
@@ -154,19 +145,32 @@ public class PageIndexingServiceImpl implements PageIndexingService {
                 index.setLemma_rank(entry.getValue());
                 indexRepository.saveAndFlush(index);
             } else {
-                for (Lemma lemma1 : lemmaList1) {
-                    if (lemma1.getLemma().equals(lemmaString) &&
-                            lemma1.getSite().getId() == site.getId()) {
-                        lemma1.setFrequency(lemma1.getFrequency() + 1);
-                        lemmaRepository.saveAndFlush(lemma1);
-                        Index index = new Index();
-                        index.setPage(page);
-                        index.setLemma(lemma1);
-                        index.setLemma_rank(entry.getValue());
-                        indexRepository.saveAndFlush(index);
-                        break;
-                    }
-                }
+                saveLemmaIndexIfLemmaListNoEmpty(lemmaList1, lemmaString, site, page, entry);
+            }
+        }
+    }
+
+    private void saveLemmaIndexIfLemmaListNoEmpty(List<Lemma> lemmaList1, String lemmaString,
+                                                  Site site, Page page, Map.Entry<String, Integer> entry) {
+        for (Lemma lemma1 : lemmaList1) {
+            if (lemma1.getLemma().equals(lemmaString) &&
+                    lemma1.getSite().getId() == site.getId()) {
+                lemma1.setFrequency(lemma1.getFrequency() + 1);
+                lemmaRepository.saveAndFlush(lemma1);
+                Index index = new Index();
+                index.setPage(page);
+                index.setLemma(lemma1);
+                index.setLemma_rank(entry.getValue());
+                indexRepository.saveAndFlush(index);
+                break;
+            }
+        }
+    }
+
+    private void addLemmaInLemmaList(List<Lemma> lemmaList, List<Lemma> lemmaList1, String lemmaString) {
+        for (Lemma lemma1 : lemmaList) {
+            if (lemma1.getLemma().equals(lemmaString)) {
+                lemmaList1.add(lemma1);
             }
         }
     }

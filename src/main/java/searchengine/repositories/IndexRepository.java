@@ -12,4 +12,5 @@ public interface IndexRepository extends JpaRepository<Index, Integer> {
     List<Index> findAllContains(int lemma_id, int page_id);
     List<Index> findByPage_id(Integer page_id);
     List<Index> findByLemma_id(Integer lemma_id);
+
 }

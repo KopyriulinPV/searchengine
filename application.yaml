@@ -1,7 +1,9 @@
 indexing-settings:
   sites:
-    - url: https://news.1777.ru
-      name: news.1777.ru
+    - url: https://nekdo.ru
+      name: nekdo.ru
+    - url: http://www.playback.ru
+      name: www.playback.ru
 
 
 

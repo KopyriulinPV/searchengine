@@ -18,8 +18,6 @@ import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.RecursiveTask;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import searchengine.repositories.SiteRepository;
 
@@ -30,16 +28,16 @@ import searchengine.repositories.SiteRepository;
 public class TravelingTheWeb extends RecursiveTask<String> {
     private Site site;
     @Autowired
-    private PageRepository pageRepository;
+    private static PageRepository pageRepository;
     @Autowired
-    private SiteRepository siteRepository;
+    private static SiteRepository siteRepository;
     @Autowired
-    private LemmaRepository lemmaRepository;
+    private static LemmaRepository lemmaRepository;
     @Autowired
-    private IndexRepository indexRepository;
+    private static IndexRepository indexRepository;
     private String url;
     public static boolean indexingStop;
-    private LemmaFinder lemmaFinder;
+    private static LemmaFinder lemmaFinder;
 
     public TravelingTheWeb(Site site, PageRepository pageRepository,
                            SiteRepository siteRepository, String url,
@@ -62,38 +60,28 @@ public class TravelingTheWeb extends RecursiveTask<String> {
     protected String compute() {
         try {
             Document document = Jsoup.connect(url).get();
-            Thread.sleep(1000);
-            System.out.println(site.getUrl() + " " + Thread.currentThread());
-            for (String tag : formationListUrl(url, document)) {
+            Thread.sleep(500);
+            Set<String> tagList = getSetUrl(document);
+            document = null;
+            for (String tag : tagList) {
                 if (tag.matches(regex)) {
-                    URL pathUrl = new URL(tag);
-                    URL pathUrl2 = new URL(url);
-                    Pattern pattern = Pattern.compile(pathUrl2.getHost());
-                    Matcher matcher = pattern.matcher(tag);
-                    List<Page> pagesList = pageRepository.findByPath(pathUrl.getPath());
-                    if ((pagesList.size() == 0) && matcher.find()) {
-                        doStatusIndexing();
-                        String indexingStop = indexingSitePage(tag, pathUrl);
-                        if (indexingStop.matches("Индексация остановлена пользователем")) {
-                            return "Индексация остановлена пользователем";
-                        }
-                        return "Индексация завершена";
+                    URL urlSiteIndexing = new URL(site.getUrl());
+                    URL urlTag = new URL(tag);
+                    URL urlUrl = new URL(url);
+                    if (checkForAvailabilityPage(urlUrl, urlTag)) {
+                        continue;
                     }
-                    List<Page> pagesList1 = pageRepository.findByPath(pathUrl.getPath());
-                    List<Page> pagesList2 = pageRepository.findByPath(pathUrl.getPath());
-                    for (Page newPage : pagesList1) {
-                        if (newPage.getSite().getUrl().contains(pathUrl2.getHost())) {
-                            pagesList2.add(newPage);
-                        }
+                    if (!urlTag.getHost().equals(urlSiteIndexing.getHost())) {
+                        continue;
                     }
-                    if (pagesList2.size() == 0 && matcher.find()) {
-                        doStatusIndexing();
-                        String indexingStop = indexingSitePage(tag, pathUrl);
-                        if (indexingStop.matches("Индексация остановлена пользователем")) {
-                            return "Индексация остановлена пользователем";
-                        }
-                        return "Индексация завершена";
+                    TravelingTheWeb action = new TravelingTheWeb(site, pageRepository,
+                            siteRepository, tag, lemmaRepository, indexRepository, lemmaFinder);
+                    action.fork();
+                    String resultIndexing = startSaveIfPageRepositoryNotFindByPath(urlUrl, tag, urlTag, action, site);
+                    if (resultIndexing.equals("Индексация остановлена пользователем")) {
+                        return "Индексация остановлена пользователем";
                     }
+                    action.join();
                 }
             }
         } catch (Exception ex) {
@@ -106,40 +94,60 @@ public class TravelingTheWeb extends RecursiveTask<String> {
         return "Индексация завершена";
     }
 
-    /**
-     * запись в БД проиндексированных сущностей Site и Page
-     */
-    private String indexingSitePage(String nexUrl, URL pathUrl) throws IOException, InterruptedException {
-        if (indexingStop == true) {
-            return "Индексация остановлена пользователем";
+    private static synchronized boolean checkForAvailabilityPage(URL urlUrl, URL urlTag) {
+        List<Page> pagesList = getListPageAvailableInTheDatabase(urlUrl, urlTag);
+        if (pagesList.size() == 0) {
+            return false;
+        } else {
+            return true;
         }
-        TravelingTheWeb action = new TravelingTheWeb(site, pageRepository,
-                siteRepository, nexUrl, lemmaRepository, indexRepository, lemmaFinder);
-        action.fork();
-        Page pageEntity = new Page();
-        pageEntity.setPath(pathUrl.getPath());
-        pageEntity.setSite(site);
-        Thread.sleep(1000);
-        Document document1 = Jsoup.connect(nexUrl).get();
-        Thread.sleep(1000);
+    }
 
-        Connection.Response code = Jsoup.connect(nexUrl).execute();
-        pageEntity.setCode(code.statusCode());
-
-        pageEntity.setContent(document1.getAllElements().toString());
-        pageRepository.saveAndFlush(pageEntity);
-        String indexingStop = indexingLemmaIndex(pageEntity, document1);
-        if (indexingStop.matches("Индексация остановлена пользователем")) {
-            return "Индексация остановлена пользователем";
+    private static synchronized String startSaveIfPageRepositoryNotFindByPath(URL urlUrl, String tag,
+                                                                              URL urlTag, TravelingTheWeb action, Site site)
+            throws IOException, InterruptedException {
+        List<Page> pagesList = getListPageAvailableInTheDatabase(urlUrl, urlTag);
+        if (pagesList.size() == 0) {
+            System.out.println(tag + " - " + Thread.currentThread());
+            doStatusIndexing(site);
+            String indexingStop = saveSitePage(tag, urlTag, action, site);
+            if (indexingStop.matches("Индексация остановлена пользователем")) {
+                return "Индексация остановлена пользователем";
+            }
         }
-        action.join();
         return "";
     }
 
-    /**
-     * запись в БД проиндексированных сущностей Lemma и Index
-     */
-    private String indexingLemmaIndex(Page pageEntity, Document document) throws IOException {
+    private static synchronized List<Page> getListPageAvailableInTheDatabase(URL urlUrl, URL urlTag) {
+        List<Page> pagesList1 = pageRepository.findByPath(urlTag.getPath());
+        List<Page> pagesList2 = new ArrayList<>();
+        for (Page newPage : pagesList1) {
+            if (newPage.getSite().getUrl().contains(urlUrl.getHost())) {
+                pagesList2.add(newPage);
+            }
+        }
+        return pagesList2;
+    }
+
+    private static String saveSitePage(String nexUrl, URL pathUrl, TravelingTheWeb action, Site site) throws IOException, InterruptedException {
+        if (indexingStop == true) {
+            return "Индексация остановлена пользователем";
+        }
+        Page pageEntity = new Page();
+        pageEntity.setPath(pathUrl.getPath());
+        pageEntity.setSite(site);
+
+        Document document1 = Jsoup.connect(nexUrl).get();
+        Thread.sleep(500);
+        Connection.Response code = Jsoup.connect(nexUrl).execute();
+        pageEntity.setCode(code.statusCode());
+        pageEntity.setContent(document1.getAllElements().toString());
+        pageRepository.saveAndFlush(pageEntity);
+        String indexingStop = saveLemmaIndex(pageEntity, document1, action, site);
+        return indexingStop;
+    }
+
+    private static String saveLemmaIndex(Page pageEntity, Document document, TravelingTheWeb action, Site site) throws IOException {
         if (indexingStop == true) {
             return "Индексация остановлена пользователем";
         }
@@ -174,26 +182,26 @@ public class TravelingTheWeb extends RecursiveTask<String> {
         }
         lemmaRepository.saveAllAndFlush(listLemmaIndexing);
         indexRepository.saveAllAndFlush(listIndex);
+
         return "";
     }
 
-    /**
-     * формирование листа url
-     */
-    private List<String> formationListUrl(String url, Document document) throws InterruptedException, IOException {
-        List<String> linksFromTags = new ArrayList<>();
+    private Set<String> getSetUrl(Document document) throws InterruptedException, IOException {
+        Set<String> linksFromTags = new HashSet<>();
         Elements elements = document.select("body").select("a");
         elements.forEach(element -> {
             linksFromTags.add(element.absUrl("href"));
         });
         return linksFromTags;
     }
-    private void doStatusIndexing() {
+
+    private static void doStatusIndexing(Site site) {
         site.setStatus(Status.INDEXING);
         site.setStatus_time(LocalDateTime.now());
         siteRepository.saveAndFlush(site);
     }
-    private void doSaveIndex(Page pageEntity, Lemma lemma, Integer lemma_rank, Set<Index> listIndex) {
+
+    private static void doSaveIndex(Page pageEntity, Lemma lemma, Integer lemma_rank, Set<Index> listIndex) {
         Index index = new Index();
         index.setPage(pageEntity);
         index.setLemma(lemma);
